@@ -1,6 +1,7 @@
 #include <M5Stack.h>
 #include <M5_DLight.h>
 #include "M5_ENV.h"
+#include "npk.h"
 
 uint8_t mode = 0;
 uint8_t temp = 32;
@@ -12,6 +13,7 @@ M5_DLight dlight;
 void setup() {
   M5.begin();
   M5.Power.begin();
+  M5.Lcd.begin();    
   M5.Lcd.fillScreen(BLACK);
 
   Wire.begin();
@@ -51,12 +53,26 @@ void refreshDisplay(){
       M5.Lcd.setTextSize(4);
       M5.Lcd.printf("%i", humid);
 
+
       M5.Lcd.setTextSize(2);
-      M5.Lcd.drawString("Stuff", 180, 120);
+      M5.Lcd.drawString("phosphorous", 180, 120);
       M5.Lcd.setCursor(180,160);
       M5.Lcd.setTextSize(4);
-      M5.Lcd.printf("%i", humid);
+      M5.Lcd.printf("%i", phosphorous());
 
+
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.drawString("potassium", 180, 120);
+      M5.Lcd.setCursor(180,160);
+      M5.Lcd.setTextSize(4);
+      M5.Lcd.printf("%i", potassium());
+
+
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.drawString("nitrogen", 180, 120);
+      M5.Lcd.setCursor(180,160);
+      M5.Lcd.setTextSize(4);
+      M5.Lcd.printf("%i", nitrogen());
 
 
       break;
@@ -110,3 +126,4 @@ void loop() {
   delay(2500);
 
 }
+
