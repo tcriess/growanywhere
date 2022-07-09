@@ -2,15 +2,19 @@
 #include <M5Stack.h>
 #include <M5_DLight.h>
 #include <TCA9548A.h>
-#include "M5_ENV.h"
+#include <M5_ENV.h>
 #include "npk.h"
 
 uint8_t mode = 0;
 uint8_t temp = 32;
 uint16_t light = 23;
 uint8_t humid = 85;
+float press = 1.0;
 
 M5_DLight *dlight;
+
+SHT3X *sht30;
+QMP6988 *qmp6988;
 
 TCA9548A hub;
 
@@ -27,20 +31,20 @@ void setup() {
 
   dlight = new M5_DLight();
 
-  // hub.writeRegister(CONTINUOUSLY_H_RESOLUTION_MODE);
-
   dlight->begin();
 
   dlight->setMode(CONTINUOUSLY_H_RESOLUTION_MODE);
-  //Wire.beginTransmission(0x23);
-  //Wire.write((byte)POWER_ON);
-  //Wire.endTransmission();
-
-  //Wire.beginTransmission(0x23);
-  //Wire.write((byte)CONTINUOUSLY_H_RESOLUTION_MODE);
-  //Wire.endTransmission();
-  //// dlight.setMode(CONTINUOUSLY_H_RESOLUTION_MODE);
   hub.closeChannel(TCA_CHANNEL_0);
+
+  hub.openChannel(TCA_CHANNEL_1);
+
+  sht30 = new SHT3X();
+
+  qmp6988 = new QMP6988();
+
+  qmp6988->init();
+
+  hub.closeChannel(TCA_CHANNEL_1);
 }
 
 uint8_t buffer[2];
@@ -48,11 +52,17 @@ uint8_t buffer[2];
 void fetchData(){
   hub.openChannel(TCA_CHANNEL_0);
   light = dlight->getLUX();
-  //Wire.requestFrom(0x23, 2);
-  //buffer[0] = Wire.read();
-  //buffer[1] = Wire.read();
-  //light = (uint16_t)buffer[0] << 8 | (uint16_t)buffer[1];
   hub.closeChannel(TCA_CHANNEL_0);
+
+  hub.openChannel(TCA_CHANNEL_1);
+
+  if (sht30->get() == 0) {
+    temp = sht30->cTemp;
+    humid = sht30->humidity;
+  }
+  press = qmp6988->calcPressure();
+
+  hub.closeChannel(TCA_CHANNEL_1);
 }
 
 void refreshDisplay(){
@@ -126,8 +136,8 @@ void refreshDisplay(){
 }
 
 void listenBtns(){
-  temp = random(100);
-  humid = random(100);
+  //temp = random(100);
+  //humid = random(100);
 }
 
 void loop() {
