@@ -7,6 +7,9 @@ uint8_t mode = 0;
 uint8_t temp = 32;
 uint16_t light = 23;
 uint8_t humid = 85;
+float pressure = 1.1;
+
+int ms;
 
 M5_DLight dlight;
 
@@ -24,6 +27,8 @@ void setup() {
 
 void fetchData(){
   light = dlight.getLUX();
+  temp = random(100);
+  humid = random(100);
 }
 
 void refreshDisplay(){
@@ -41,8 +46,8 @@ void refreshDisplay(){
       
 
       M5.Lcd.setTextSize(2);
-      M5.Lcd.drawString("Light", 200, 0);
-      M5.Lcd.setCursor(200,40);
+      M5.Lcd.drawString("Light", 220, 0);
+      M5.Lcd.setCursor(205,40);
       M5.Lcd.setTextSize(4);
       M5.Lcd.printf("%i", light);
 
@@ -55,75 +60,107 @@ void refreshDisplay(){
 
 
       M5.Lcd.setTextSize(2);
-      M5.Lcd.drawString("phosphorous", 180, 120);
-      M5.Lcd.setCursor(180,160);
+      M5.Lcd.drawString("Pressure", 220, 120);
+      M5.Lcd.setCursor(230,160);
       M5.Lcd.setTextSize(4);
-      M5.Lcd.printf("%i", phosphorous());
+      M5.Lcd.printf("%f", std::round(pressure));
 
-
-      M5.Lcd.setTextSize(2);
-      M5.Lcd.drawString("potassium", 180, 120);
-      M5.Lcd.setCursor(180,160);
-      M5.Lcd.setTextSize(4);
-      M5.Lcd.printf("%i", potassium());
-
-
-      M5.Lcd.setTextSize(2);
-      M5.Lcd.drawString("nitrogen", 180, 120);
-      M5.Lcd.setCursor(180,160);
-      M5.Lcd.setTextSize(4);
-      M5.Lcd.printf("%i", nitrogen());
+      M5.Lcd.fillRect(0,220,105,40,WHITE);
 
 
       break;
     case 1:
       
       //second menu
-      int address;
-    int error;
-    M5.Lcd.setCursor(0, 0);
-    M5.Lcd.println("scanning Address [HEX]");
-    for (address = 1; address < 127; address++) {
-        Wire.beginTransmission(
-            address);  // Data transmission to the specified device address
-                       // starts.   开始向指定的设备地址进行传输数据
-        error = Wire.endTransmission(); /*Stop data transmission with the slave.
-                  停止与从机的数据传输 0: success.  成功 1: The amount of data
-                  exceeds the transmission buffer capacity limit.
-                  数据量超过传送缓存容纳限制 return value:              2:
-                  Received NACK when sending address.  传送地址时收到 NACK 3:
-                  Received NACK when transmitting data.  传送数据时收到 NACK
-                                             4: Other errors.  其它错误 */
-        if (error == 0) {
-            M5.Lcd.print(address, HEX);
-            M5.Lcd.print(" ");
-        } else
-            M5.Lcd.print(".");
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.drawString("Phosporous", 0, 0);
+      M5.Lcd.setCursor(25,40);
+      M5.Lcd.setTextSize(4);
+      M5.Lcd.printf("%i", phosphorous());
+      
 
-        delay(10);
-    }
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.drawString("Potassium", 210, 0);
+      M5.Lcd.setCursor(230,40);
+      M5.Lcd.setTextSize(4);
+      M5.Lcd.printf("%i", potassium());
+
+
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.drawString("Nitrogen", 0, 120);
+      M5.Lcd.setCursor(30,160);
+      M5.Lcd.setTextSize(4);
+      M5.Lcd.printf("%i", nitrogen());
+
+
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.drawString("4th val", 220, 120);
+      M5.Lcd.setCursor(230,160);
+      M5.Lcd.setTextSize(4);
+      M5.Lcd.printf("%i", phosphorous());
+
+      M5.Lcd.fillRect(105,220,105,40,WHITE);
+
 
       break;
     case 2:
       
       //third menu
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.drawString("GPS", 50, 0);
+      M5.Lcd.setCursor(0,40);
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.printf("Lat: %f", 47.684090);
+      M5.Lcd.setCursor(0,80);
+      M5.Lcd.printf("Lon: %f", 9.168429);
 
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.drawString("Growing:", 220, 0);
+      M5.Lcd.setCursor(230,40);
+      M5.Lcd.setTextSize(4);
+      M5.Lcd.printf("%i h", 4);
+
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.drawString("Grown in:", 30, 120);
+      M5.Lcd.setCursor(30,160);
+      M5.Lcd.setTextSize(4);
+      M5.Lcd.printf("%i d", 12);
+
+
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.drawString("Health", 220, 120);
+      M5.Lcd.setCursor(230,160);
+      M5.Lcd.setTextSize(4);
+      M5.Lcd.printf("OK");
+
+
+      M5.Lcd.fillRect(210,220,105,40,WHITE);
 
       break;
   }
 }
 
 void listenBtns(){
-  temp = random(100);
-  humid = random(100);
+  M5.update();
+  if (M5.BtnA.isPressed() && mode != 0) {
+        mode = 0;
+        M5.Lcd.clear();
+    } else if (M5.BtnB.isPressed() && mode != 1) {
+        mode = 1;
+        M5.Lcd.clear();
+    } else if (M5.BtnC.isPressed() && mode != 2) {
+        mode = 2;
+        M5.Lcd.clear();
+    }
 }
 
 void loop() {
-  
-  fetchData();
-  refreshDisplay();
-  listenBtns();
-  delay(2500);
 
+  listenBtns();
+  refreshDisplay();
+  if(ms + 10000 < millis()){
+    fetchData();
+    ms = millis();
+  }
 }
 
