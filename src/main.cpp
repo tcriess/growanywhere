@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include <M5Stack.h>
 #include <M5_DLight.h>
 #include "M5_ENV.h"
@@ -13,7 +14,6 @@ M5_DLight dlight;
 void setup() {
   M5.begin();
   M5.Power.begin();
-  M5.Lcd.begin();    
   M5.Lcd.fillScreen(BLACK);
 
   Wire.begin();
@@ -32,48 +32,31 @@ void refreshDisplay(){
     case 0:
 
       // first menu
+      M5.Lcd.setTextSize(3);
 
-      M5.Lcd.setTextSize(2);
-      M5.Lcd.drawString("Temperature", 0, 0);
-      M5.Lcd.setCursor(25,40);
-      M5.Lcd.setTextSize(4);
+      M5.Lcd.drawString("Temperature: ", 0, 0);
+      M5.Lcd.setCursor(210,0);
       M5.Lcd.printf("%i", temp);
-      
 
-      M5.Lcd.setTextSize(2);
-      M5.Lcd.drawString("Light", 200, 0);
-      M5.Lcd.setCursor(200,40);
-      M5.Lcd.setTextSize(4);
+      M5.Lcd.drawString("Light: ", 0, 25);
+      M5.Lcd.setCursor(210,25);
       M5.Lcd.printf("%i", light);
 
-
-      M5.Lcd.setTextSize(2);
-      M5.Lcd.drawString("Humidity", 0, 120);
-      M5.Lcd.setCursor(30,160);
-      M5.Lcd.setTextSize(4);
+      M5.Lcd.drawString("Humidity: ", 0, 50);
+      M5.Lcd.setCursor(210,50);
       M5.Lcd.printf("%i", humid);
 
-
-      M5.Lcd.setTextSize(2);
-      M5.Lcd.drawString("phosphorous", 180, 120);
-      M5.Lcd.setCursor(180,160);
-      M5.Lcd.setTextSize(4);
+      M5.Lcd.drawString("Phosphorous: ", 0, 75);
+      M5.Lcd.setCursor(210,75);
       M5.Lcd.printf("%i", phosphorous());
 
-
-      M5.Lcd.setTextSize(2);
-      M5.Lcd.drawString("potassium", 180, 120);
-      M5.Lcd.setCursor(180,160);
-      M5.Lcd.setTextSize(4);
+      M5.Lcd.drawString("Potassium: ", 0, 100);
+      M5.Lcd.setCursor(210,100);
       M5.Lcd.printf("%i", potassium());
 
-
-      M5.Lcd.setTextSize(2);
-      M5.Lcd.drawString("nitrogen", 180, 120);
-      M5.Lcd.setCursor(180,160);
-      M5.Lcd.setTextSize(4);
+      M5.Lcd.drawString("nitrogen:", 0, 125);
+      M5.Lcd.setCursor(210,125);
       M5.Lcd.printf("%i", nitrogen());
-
 
       break;
     case 1:
