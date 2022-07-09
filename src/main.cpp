@@ -10,7 +10,7 @@ uint8_t temp = 32;
 uint16_t light = 23;
 uint8_t humid = 85;
 
-// M5_DLight dlight;
+M5_DLight *dlight;
 
 TCA9548A hub;
 
@@ -24,16 +24,22 @@ void setup() {
   hub.begin();
 
   hub.openChannel(TCA_CHANNEL_0);
+
+  dlight = new M5_DLight();
+
   // hub.writeRegister(CONTINUOUSLY_H_RESOLUTION_MODE);
 
-  Wire.beginTransmission(0x23);
-  Wire.write((byte)POWER_ON);
-  Wire.endTransmission();
+  dlight->begin();
 
-  Wire.beginTransmission(0x23);
-  Wire.write((byte)CONTINUOUSLY_H_RESOLUTION_MODE);
-  Wire.endTransmission();
-  // dlight.setMode(CONTINUOUSLY_H_RESOLUTION_MODE);
+  dlight->setMode(CONTINUOUSLY_H_RESOLUTION_MODE);
+  //Wire.beginTransmission(0x23);
+  //Wire.write((byte)POWER_ON);
+  //Wire.endTransmission();
+
+  //Wire.beginTransmission(0x23);
+  //Wire.write((byte)CONTINUOUSLY_H_RESOLUTION_MODE);
+  //Wire.endTransmission();
+  //// dlight.setMode(CONTINUOUSLY_H_RESOLUTION_MODE);
   hub.closeChannel(TCA_CHANNEL_0);
 }
 
@@ -41,11 +47,11 @@ uint8_t buffer[2];
 
 void fetchData(){
   hub.openChannel(TCA_CHANNEL_0);
-  //light = dlight.getLUX();
-  Wire.requestFrom(0x23, 2);
-  buffer[0] = Wire.read();
-  buffer[1] = Wire.read();
-  light = (uint16_t)buffer[0] << 8 | (uint16_t)buffer[1];
+  light = dlight->getLUX();
+  //Wire.requestFrom(0x23, 2);
+  //buffer[0] = Wire.read();
+  //buffer[1] = Wire.read();
+  //light = (uint16_t)buffer[0] << 8 | (uint16_t)buffer[1];
   hub.closeChannel(TCA_CHANNEL_0);
 }
 
