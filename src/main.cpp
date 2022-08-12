@@ -385,7 +385,7 @@ void setup() {
   lora_fixed.setAdaptiveDataRate(true);
   //lora.setDutyCycle(false);
   //lora.setJoinDutyCycle(false);
-  while (!lora_fixed.setOTAAJoin(JOIN, 10));
+  lora_fixed.setOTAAJoin(JOIN, 10);
   
   SerialAT.begin(SIM7080_BAUDRATE, SERIAL_8N1, IoT_BASE_SIM7080_RX, IoT_BASE_SIM7080_TX);
   xTaskCreatePinnedToCore(
