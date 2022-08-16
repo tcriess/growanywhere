@@ -23,8 +23,138 @@
 #include <TinyGsmClient.h> // after IoT_BASE_SIM7080.h (the modem is defined there)
 #include <TinyGPSPlus.h>
 #include <ArduinoHttpClient.h>
-#include <UNIT_4RELAY.h> // the globally defined "addr" clashes with the aduinojson lib used in cayennelpp...
+/*
+#include <BLEDevice.h>
+#include <BLEUtils.h>
+#include <BLEServer.h>
+#include <BLE2902.h>
+#include <improv.h>
+*/
+#include <esp_wifi.h>
+#include <WiFi.h>
+#include <Preferences.h>
 #include "secrets.h"
+
+/*
+#include <EEPROM.h>
+#ifdef ESP32
+  #include <esp_wifi.h>
+  #include <WiFi.h>
+  #include <WiFiClient.h>
+
+  // From v1.1.0
+  #include <WiFiMulti.h>
+  WiFiMulti wifiMulti;
+
+  // LittleFS has higher priority than SPIFFS
+  #if ( defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 2) )
+    #define USE_LITTLEFS    true
+    #define USE_SPIFFS      false
+  #elif defined(ARDUINO_ESP32C3_DEV)
+    // For core v1.0.6-, ESP32-C3 only supporting SPIFFS and EEPROM. To use v2.0.0+ for LittleFS
+    #define USE_LITTLEFS          false
+    #define USE_SPIFFS            true
+  #endif
+
+  #define USE_LITTLEFS    false
+  #define USE_SPIFFS      false
+
+  #if USE_LITTLEFS
+    // Use LittleFS
+    #include "FS.h"
+
+    // Check cores/esp32/esp_arduino_version.h and cores/esp32/core_version.h
+    //#if ( ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(2, 0, 0) )  //(ESP_ARDUINO_VERSION_MAJOR >= 2)
+    #if ( defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 2) )
+      #warning Using ESP32 Core 1.0.6 or 2.0.0+
+      // The library has been merged into esp32 core from release 1.0.6
+      #include <LittleFS.h>       // https://github.com/espressif/arduino-esp32/tree/master/libraries/LittleFS
+      
+      FS* filesystem =      &LittleFS;
+      #define FileFS        LittleFS
+      #define FS_Name       "LittleFS"
+    #else
+      #warning Using ESP32 Core 1.0.5-. You must install LITTLEFS library
+      // The library has been merged into esp32 core from release 1.0.6
+      #include <LITTLEFS.h>       // https://github.com/lorol/LITTLEFS
+      
+      FS* filesystem =      &LITTLEFS;
+      #define FileFS        LITTLEFS
+      #define FS_Name       "LittleFS"
+    #endif
+    
+  #elif USE_SPIFFS
+    #include <SPIFFS.h>
+    FS* filesystem =      &SPIFFS;
+    #define FileFS        SPIFFS
+    #define FS_Name       "SPIFFS"
+  #else
+    // Use FFat
+    #include <FFat.h>
+    FS* filesystem =      &FFat;
+    #define FileFS        FFat
+    #define FS_Name       "FFat"
+  #endif
+  //////
+
+  #define ESP_getChipId()   ((uint32_t)ESP.getEfuseMac())
+
+  #define LED_BUILTIN       2
+  #define LED_ON            HIGH
+  #define LED_OFF           LOW
+#endif
+
+// SSID and PW for Config Portal
+String ssid = "ESP_" + String(ESP_getChipId(), HEX);
+const char* password = "your_password";
+
+// SSID and PW for your Router
+String Router_SSID;
+String Router_Pass;
+
+// From v1.1.0
+// You only need to format the filesystem once
+//#define FORMAT_FILESYSTEM       true
+#define FORMAT_FILESYSTEM         false
+
+#define MIN_AP_PASSWORD_SIZE    8
+
+#define SSID_MAX_LEN            32
+//From v1.0.10, WPA2 passwords can be up to 63 characters long.
+#define PASS_MAX_LEN            64
+
+typedef struct
+{
+  char wifi_ssid[SSID_MAX_LEN];
+  char wifi_pw  [PASS_MAX_LEN];
+}  WiFi_Credentials;
+
+typedef struct
+{
+  String wifi_ssid;
+  String wifi_pw;
+}  WiFi_Credentials_String;
+
+#define NUM_WIFI_CREDENTIALS      2
+
+typedef struct
+{
+  WiFi_Credentials  WiFi_Creds [NUM_WIFI_CREDENTIALS];
+} WM_Config;
+
+WM_Config         WM_config;
+
+#define  CONFIG_FILENAME              F("/wifi_cred.dat")
+//////
+
+#include <ESP_WiFiManager.h>              //https://github.com/khoih-prog/ESP_WiFiManager
+*/
+
+#include <UNIT_4RELAY.h> // the globally defined "addr" clashes with the aduinojson lib used in cayennelpp... (or something else)... hence it must be included last!
+
+// ESP_WiFiManager ESP_wifiManager("Growanywhere");
+
+// WiFiClient wificlient;
 
 /*
 The following pins are in use
@@ -54,6 +184,8 @@ Stepmotor drivers: 0x70, 0x71
 Relais: 0x26
 K-Meter: 0x66 (water temperature)
 */
+
+WiFiClient wificlient;
 
 #define CAMADDR 0x17
 
@@ -179,6 +311,28 @@ bool hasCard = false;
 
 uint8_t img[10240];
 
+/*
+BLEServer *pServer;
+BLEService *pService;
+
+class RPCCallbacks : public BLEDescriptorCallbacks {
+public:
+	void onWrite(BLEDescriptor* pDescriptor) {
+    uint8_t* rxValue = pDescriptor->getValue();
+    if (pDescriptor->getLength() > 0) {
+        Serial.println("*********");
+        Serial.print("Received Descriptor Value: ");
+        for (int i = 0; i < pDescriptor->getLength(); i++)
+          Serial.print(rxValue[i]);
+
+        Serial.println();
+        Serial.println("*********");
+    }
+  };
+};
+*/
+
+Preferences preferences;
 
 void setup() {
   Serial.write("Start.");
@@ -197,6 +351,132 @@ void setup() {
   } else {
     hasCard = true;
   }
+
+  WiFi.mode(WIFI_AP_STA);
+  wifi_config_t conf;
+  esp_wifi_get_config(WIFI_IF_STA, &conf);
+  String rssiSSID = String(reinterpret_cast<const char*>(conf.sta.ssid));
+  String password = String(reinterpret_cast<const char*>(conf.sta.password));
+  preferences.begin("wifi", false);
+  String PrefSSID =  preferences.getString("ssid", "none");      //NVS key ssid
+  String PrefPassword = preferences.getString("password", "none");  //NVS key password
+  preferences.end();
+  if ((!rssiSSID.equals(PrefSSID)) || (!password.equals(PrefPassword))) {
+    WiFi.beginSmartConfig();
+    int waitfor = 0;
+    while ((!WiFi.smartConfigDone()) && (waitfor < 100)) {
+      delay(500);
+      Serial.print(".");
+      waitfor++;
+    }
+    if (WiFi.smartConfigDone()) {
+      Serial.println("smart config done, connect");
+      while( WiFi.status() != WL_CONNECTED )    	// check till connected
+      { 
+        delay(2000);
+        Serial.print(".");
+      }
+      preferences.begin("wifi", false);      // put it in storage
+      preferences.putString( "ssid", WiFi.SSID());
+      preferences.putString( "password", WiFi.psk());
+      preferences.end();
+      ESP.restart();
+    }
+    Serial.println("could not connect, abort smarconfig");
+    WiFi.stopSmartConfig();
+  }
+  if (rssiSSID.equals(PrefSSID) && password.equals(PrefPassword)) {
+    WiFi.begin( PrefSSID.c_str() , PrefPassword.c_str() );
+  }
+
+  /*
+  BLEDevice::init("Improv Service");
+
+  log("create ble server");
+
+  pServer = BLEDevice::createServer();
+  // pServer->setCallbacks(new myServerCallbacks());
+
+  log("create ble service");
+  pService = pServer->createService(improv::SERVICE_UUID); // , true
+  log("create status char");
+  BLECharacteristic *status = pService->createCharacteristic(improv::STATUS_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+  BLEDescriptor *status_descriptor = new BLE2902();
+  log("add status desc");
+  status->addDescriptor(status_descriptor);
+  log("create error char");
+  BLECharacteristic *error = pService->createCharacteristic(improv::ERROR_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+  BLEDescriptor *error_descriptor = new BLE2902();
+  log("add error desc");
+  error->addDescriptor(error_descriptor);
+
+  log("create rpc char");
+  BLECharacteristic *rpc = pService->createCharacteristic(improv::RPC_COMMAND_UUID, BLECharacteristic::PROPERTY_WRITE);
+  BLEDescriptor *rpc_descriptor = new BLE2902();
+  log("set rpc callbacks");
+  rpc_descriptor->setCallbacks(new RPCCallbacks());
+  log("add rpc desc");
+  rpc->addDescriptor(rpc_descriptor);
+
+  log("create rpc resp char");
+  BLECharacteristic *rpc_response = pService->createCharacteristic(improv::RPC_RESULT_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+  BLEDescriptor *rpc_response_descriptor = new BLE2902();
+  log("add rpc resp desc");
+  rpc_response->addDescriptor(rpc_response_descriptor);
+
+  log("create cap char");
+  BLECharacteristic *capabilities = pService->createCharacteristic(improv::CAPABILITIES_UUID, BLECharacteristic::PROPERTY_READ);
+  BLEDescriptor *capabilities_descriptor = new BLE2902();
+  log("add cap desc");
+  capabilities->addDescriptor(capabilities_descriptor);
+
+  log("start ble service");
+  pService->start();
+
+
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(improv::SERVICE_UUID);
+  pAdvertising->setScanResponse(true);
+  pAdvertising->setMinPreferred(0x06);  // functions that help with iPhone connections issue
+  pAdvertising->setMinPreferred(0x12);
+  // pServer->getAdvertising()->addServiceUUID(improv::SERVICE_UUID);
+  log("start ble advertising");
+  BLEDevice::startAdvertising();
+  // pServer->getAdvertising()->start();
+  log("ble setup done.");
+  */
+
+  /*
+  EEPROM.begin(100);
+  Router_SSID = EEPROM.readString(0);
+  Router_Pass = EEPROM.readString(50);
+
+  // Router_SSID = ESP_wifiManager.WiFi_SSID();
+  // Router_Pass = ESP_wifiManager.WiFi_Pass();
+
+  Serial.println("ESP Self-Stored: SSID = " + Router_SSID + ", Pass = " + Router_Pass);
+
+  if ( (Router_SSID != "") && (Router_Pass != "") ) {
+    ESP_wifiManager.setConfigPortalTimeout(30);
+    wifiMulti.addAP(Router_SSID.c_str(), Router_Pass.c_str());
+  }
+
+  ESP_wifiManager.startConfigPortal("Growanywhere");
+
+  if ( (!ESP_wifiManager.WiFi_SSID().equals(Router_SSID)) || (!ESP_wifiManager.WiFi_Pass().equals(Router_Pass)) ) {
+    Router_SSID = ESP_wifiManager.WiFi_SSID().equals(Router_SSID);
+    Router_Pass = ESP_wifiManager.WiFi_Pass();
+
+    EEPROM.writeString(0, Router_SSID);
+    EEPROM.writeString(50, Router_Pass);
+
+    EEPROM.commit();
+  }
+
+  Serial.println("ESP Self-Stored: SSID = " + Router_SSID + ", Pass = " + Router_Pass);
+
+  wifiMulti.addAP(Router_SSID.c_str(), Router_Pass.c_str());
+  */
 
   // iotBaseInit(); // enable SIM7080 -> this is now part of the modemReset function
 
@@ -428,7 +708,9 @@ void save_image() {
   uint8_t lenbuf[2];
   lenbuf[0] = 0;
   lenbuf[1] = 0;
+  Serial.println("about to read camera image...");
   Wire.requestFrom(CAMADDR, 10240); // always request 10kB
+  sleep(2);
   for (int i=0; i<2; i++) {
     if (!Wire.available()) break;
     lenbuf[i] = Wire.read();
@@ -455,11 +737,52 @@ CayenneLPP lpp(160);
 uint8_t buffer[2];
 unsigned long lastSent = 0;
 byte coords[12];
+
+String createBody() {
+  String body = "";
+  body += "environment,device=" + String(DEVICE_ID) + " temperature=" + String(temp, 1) + ",humidity=" + String(humid, 1) + ",pressure=" + String(press, 1) + ",light=" + String((float)light, 1);
+  if(unixtime > 943920000L) {
+    body += " " + String(unixtime) + "000000000";
+  }
+  body += "\n";
+  body = "water,device=" + String(DEVICE_ID) + " ph=" + String(ph, 1) + ",ec=" + String(ec, 1) + ",nitrogen=" + String((float)nitrogen, 1) + ",phosphorus=" + String((float)phosphorus, 1) + ",potassium=" + String((float)potassium, 1) + ",distance=" + String(distance, 1) + ",temperature=" + String(water_temp,1);
+  if(unixtime > 943920000L) {
+    body += " " + String(unixtime) + "000000000";
+  }
+  body += "\n";
+  if (lon != 0 && lat != 0) {
+    body = "position,device=" + String(DEVICE_ID) + " longitude=" + String(lon, 6) + ",latitude=" + String(lat, 6) + ",altitude=" + String(alt, 1) + ",hdop=" + String(hdop, 1);
+    if(unixtime > 943920000L) {
+      body += " " + String(unixtime) + "000000000";
+    }
+    body += "\n";
+  }
+  return body;
+}
+
+
 void sendobject() {
+  if(WiFi.status() == WL_CONNECTED) {
+    if (!wificlient.connect(tcpaddr, tcpport)) {
+      log("could not connect");
+    } else {
+      wificlient.print(createBody());
+    }
+  }
+/*
+  if(wifiMulti.run() == WL_CONNECTED) {
+    if (!wificlient.connect(tcpaddr, tcpport)) {
+      log("could not connect");
+    } else {
+      wificlient.print(createBody());
+    }
+  }
+*/
+  // save_image();
   if (millis() - lastSent < 15 * 60000) {
     return;
   }
-  save_image();
+  // save_image();
   lastSent = millis();
   bool result = false;
 
@@ -771,27 +1094,8 @@ void nbConnect(void * parameter) {
       //  continue;
       //}
       if (tcpclient.connect(tcpaddr, tcpport)) {
-        String body = "";
-        body += "environment,device=" + String(DEVICE_ID) + " temperature=" + String(temp, 1) + ",humidity=" + String(humid, 1) + ",pressure=" + String(press, 1) + ",light=" + String((float)light, 1);
-        if(unixtime > 943920000L) {
-          body += " " + String(unixtime) + "000000000";
-        }
-        body += "\n";
+        String body = createBody();
         tcpclient.print(body);
-        body = "water,device=" + String(DEVICE_ID) + " ph=" + String(ph, 1) + ",ec=" + String(ec, 1) + ",nitrogen=" + String((float)nitrogen, 1) + ",phosphorus=" + String((float)phosphorus, 1) + ",potassium=" + String((float)potassium, 1) + ",distance=" + String(distance, 1) + ",temperature=" + String(water_temp,1);
-        if(unixtime > 943920000L) {
-          body += " " + String(unixtime) + "000000000";
-        }
-        body += "\n";
-        tcpclient.print(body);
-        if (lon != 0 && lat != 0) {
-          body = "position,device=" + String(DEVICE_ID) + " longitude=" + String(lon, 6) + ",latitude=" + String(lat, 6) + ",altitude=" + String(alt, 1) + ",hdop=" + String(hdop, 1);
-          if(unixtime > 943920000L) {
-            body += " " + String(unixtime) + "000000000";
-          }
-          body += "\n";
-          tcpclient.print(body);
-        }
         
         //int status = http.responseStatusCode();
         //SerialMon.print(F("Response status code: "));
@@ -799,6 +1103,7 @@ void nbConnect(void * parameter) {
         //http.stop();
         tcpclient.stop();
       }
+      sleep(1);
       vTaskDelay(60 * 60000 / portTICK_PERIOD_MS);
     }
 }
@@ -814,7 +1119,31 @@ void button_pressed(uint8_t no) {
   }
   blank = false;
   switch (no) {
-
+    case 3:
+    if (WiFi.status() != WL_CONNECTED) {
+      WiFi.beginSmartConfig();
+      int waitfor = 0;
+      while ((!WiFi.smartConfigDone()) && (waitfor < 100)) {
+        delay(500);
+        Serial.print(".");
+        waitfor++;
+      }
+      if (WiFi.smartConfigDone()) {
+        Serial.println("smart config done, connect");
+        while( WiFi.status() != WL_CONNECTED )    	// check till connected
+        { 
+          delay(2000);
+          Serial.print(".");
+        }
+        preferences.begin("wifi", false);      // put it in storage
+        preferences.putString( "ssid", WiFi.SSID());
+        preferences.putString( "password", WiFi.psk());
+        preferences.end();
+        ESP.restart();
+      }
+      Serial.println("could not connect, abort");
+      WiFi.stopSmartConfig();
+    }
   }
 }
 
