@@ -22,7 +22,8 @@
 #define TINY_GSM_DEBUG SerialMon
 #include <TinyGsmClient.h> // after IoT_BASE_SIM7080.h (the modem is defined there)
 #include <TinyGPSPlus.h>
-#include <ArduinoHttpClient.h>
+#include <HTTPClient.h>
+// #include <ArduinoHttpClient.h>
 /*
 #include <BLEDevice.h>
 #include <BLEUtils.h>
@@ -547,6 +548,7 @@ void setup() {
   // the command is (the 0x0002 -> 1st byte is baud rate 0x00 and second byte is address 0x02)
   // modbus.writeSingleHoldingRegister(0x01, 0x0100, 0x0002);
 
+/*
   // Open the i2c hub
   hub.begin();
   hub.openAll(); // the sensors (currently) have no conflicting addresses, so we can have all channels activated
@@ -592,31 +594,6 @@ void setup() {
 
   ads->setOSMode(OSMODE_SINGLE);  // Set to start a single-conversion.
   ads->begin();
-  // hub.closeChannel(5);
-
-  /*
-  // hub.openChannel(4); // water
-  ads2 = new ADS1100();
-  ads2->getAddr_ADS1100(ADS1100_DEFAULT_ADDRESS);  // 0x48, 1001 000 (ADDR = GND)
-  // ads->setGain(GAIN_ONE);  // 1x gain(default)
-  // ads->setGain(GAIN_TWO);       // 2x gain
-  // ads.setGain(GAIN_FOUR);      // 4x gain
-  // ads.setGain(GAIN_EIGHT);     // 8x gain
-  ads2->setGain(ADC_GAIN); 
-
-  ads2->setMode(MODE_CONTIN);  // Continuous conversion mode (default)
-  // ads->setMode(MODE_SINGLE);    // Single-conversion mode
-
-  // ads->setRate(RATE_8);  // 8SPS (default)
-  // ads.setRate(RATE_16);        // 16SPS
-  // ads.setRate(RATE_32);        // 32SPS
-  // ads.setRate(RATE_128);       // 128SPS
-  ads2->setRate(ADC_RATE);
-
-  ads2->setOSMode(OSMODE_SINGLE);  // Set to start a single-conversion.
-  ads2->begin();
-  //hub.closeChannel(4);
-  */
 
   unit_4relay = new UNIT_4RELAY();
   unit_4relay->Init(1); // mode 0: async, 1: sync
@@ -625,7 +602,7 @@ void setup() {
 
   sonic = new SONIC_I2C();
   sonic->begin();
-
+*/
   gpsSerial.begin(GPS_BAUD, SWSERIAL_8N1, GPS_RX, GPS_TX);
   
   lora_fixed.init();
@@ -704,31 +681,87 @@ void setup() {
   }
 }
 
-void save_image() {
+#define BLOCKSIZE 128
+
+HTTPClient http;
+
+void save_image(bool upload=false) {
   uint8_t lenbuf[2];
   lenbuf[0] = 0;
   lenbuf[1] = 0;
   Serial.println("about to read camera image...");
-  Wire.requestFrom(CAMADDR, 10240); // always request 10kB
-  sleep(2);
+  Wire.flush();
+  Wire.requestFrom(CAMADDR, 2, 1); // request size
+  // sleep(1);
+  bool errored = false;
+  Serial.printf("available: %d\n", Wire.available());
   for (int i=0; i<2; i++) {
-    if (!Wire.available()) break;
-    lenbuf[i] = Wire.read();
-  }
-  uint16_t length = (uint16_t) (lenbuf[0]);
-  length = (length << 8) + lenbuf[1];
-  Serial.printf("len: %d", length);
-  if (length>0 && length<10240) {
-    for (int i=0; i<length; i++) {
-      if (!Wire.available()) break;
-      img[i] = Wire.read();
+    if (!Wire.available()) {
+      errored = true;
+      break;
     }
+    lenbuf[i] = (uint8_t)Wire.read();
+  }
+  int16_t length = (uint16_t) (lenbuf[0]);
+  length = (length << 8) + lenbuf[1];
+  if (errored || length > 10240) {
+    Serial.printf("could not read length, abort");
+    return;
+  }
+  Serial.printf("len: %d", length);
+  
+  int rbytes = 0;
+  bool notdone = true;
+  errored = false;
+  int blockno = 0;
+  int remaining = length;
+  // read the image 128b-block-by-block
+  while(rbytes < length && (!errored)) {
+    //Serial.printf("reading block %d", blockno);
+    remaining = length - rbytes;
+    if (remaining > BLOCKSIZE) {
+      Wire.requestFrom(CAMADDR, BLOCKSIZE, 0);
+    } else {
+      Wire.requestFrom(CAMADDR, remaining, 1);
+    }
+    for (int i=0; i<BLOCKSIZE && rbytes<length; i++,rbytes++) {
+      if (!Wire.available()) {
+        errored = true;
+        break;
+      }
+      img[rbytes] = Wire.read();
+      // TODO: write this part to sdcard
+    }
+    blockno++;
+  }
+  while(Wire.available()) Wire.read();
+  if (errored) {
+    Serial.println("errored is set!");
+  }
+  Serial.printf("read %d bytes", rbytes);
+  if (length > 0 && rbytes == length) {
     if (hasCard) {
       File myFile = SD.open("/img.jpg", FILE_WRITE);
       if (myFile) {
         myFile.write(img, length);
       }
       myFile.close();
+    }
+    if(upload && WiFi.status() == WL_CONNECTED) {
+      http.setConnectTimeout(5000);
+      http.setTimeout(10000);
+      bool success = false;
+      for(int i=0;i<10&&(!success);i++) {
+        if (http.begin(wificlient, "http://www.growanywhere.de/upload")) {
+          log("about to post image");
+          http.addHeader("Authorization", String("Basic ") + String(UPLOAD_BASIC));
+          int code = http.POST(img, length);
+          http.end();
+          log("code:" + String(code));
+          if (code >= 200 && code < 400) success = true;
+        }
+        if (!success) sleep(2);
+      }
     }
   }
 }
@@ -760,29 +793,20 @@ String createBody() {
   return body;
 }
 
-
 void sendobject() {
   if(WiFi.status() == WL_CONNECTED) {
-    if (!wificlient.connect(tcpaddr, tcpport)) {
+    if (!wificlient.connect(tcpaddr, tcpport, 10000)) {
       log("could not connect");
     } else {
+      log("send data to influx");
       wificlient.print(createBody());
     }
   }
-/*
-  if(wifiMulti.run() == WL_CONNECTED) {
-    if (!wificlient.connect(tcpaddr, tcpport)) {
-      log("could not connect");
-    } else {
-      wificlient.print(createBody());
-    }
-  }
-*/
-  // save_image();
   if (millis() - lastSent < 15 * 60000) {
+    save_image();
     return;
   }
-  // save_image();
+  save_image(true);
   lastSent = millis();
   bool result = false;
 
@@ -954,7 +978,7 @@ void fetchData(){
   vTaskDelay(100 / portTICK_PERIOD_MS);
   modbus.readHoldingRegisters(0x01, 0x00, 2); // ec
   vTaskDelay(100 / portTICK_PERIOD_MS);
-  sendobject();
+  // sendobject();
 
   if (hasCard) {
     File myFile = SD.open("/data.csv", FILE_APPEND);
@@ -1031,13 +1055,13 @@ void refreshDisplay(){
 
       break;
     case 1:
-      
+      M5.Lcd.drawJpgFile(SD, "/img.jpg");
 
       break;
     case 2:
       
       //third menu
-
+      M5.Lcd.qrcode("https://growanywhere.de");
 
       break;
   }
@@ -1116,10 +1140,17 @@ void button_pressed(uint8_t no) {
   last_activity = millis();
   if (blank) {
     M5.Lcd.wakeup();
+    M5.Lcd.setBrightness(128);
+    blank = false;
+    return;
   }
-  blank = false;
   switch (no) {
-    case 3:
+    case 0:
+      if (mode > 0) mode--;
+      break;
+    case 1:
+      if (mode < 2) mode++;
+    case 2:
     if (WiFi.status() != WL_CONNECTED) {
       WiFi.beginSmartConfig();
       int waitfor = 0;
@@ -1166,7 +1197,9 @@ void m5update(void * parameter) {
         blank = true;
         M5.Lcd.clearDisplay();
         M5.Lcd.sleep();
+        M5.Lcd.setBrightness(0);
       } else {
+        // M5.Lcd.setBrightness(255);
         refreshDisplay();
       }
     }
@@ -1188,6 +1221,7 @@ static void smartDelay(unsigned long ms)
 }
 
 void loop() {
-  fetchData();
+  // fetchData();
+  sendobject();
   smartDelay(10000);
 }

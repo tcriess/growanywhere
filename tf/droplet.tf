@@ -421,6 +421,23 @@ write_files:
         influx -username admin -password ${var.influx-admin-pw} -execute "GRANT ALL ON growanywhere TO ${var.influx-user-name}"
         rm -f /vol/.init-influxdb
       fi
+  - owner: root:root
+    path: /etc/systemd/system/growanywhere.service
+    content: |
+      [Unit]
+      Description=Growanywhere hp + image upload
+      After=network-online.target
+      AssertFileIsExecutable=/usr/local/bin/growanywhere-hp
+      RequiresMountsFor=/vol
+
+      [Service]
+      Type=simple
+      ExecStart=/usr/local/bin/growanywhere-hp --listen :8000 --username ${var.upload-username} --password ${var.upload-password} --upload-path /vol/images
+      Restart=always
+      RestartSec=1s
+
+      [Install]
+      WantedBy=multi-user.target
 users:
   - name: spanz
     groups: [sudo, adm]

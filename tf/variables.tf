@@ -45,3 +45,11 @@ variable "ttn-mqtt-password" {
 variable "ttn-device-id" {
   sensitive = true
 }
+
+variable "upload-username" {
+  default = "growanywhere"
+}
+
+variable "upload-password" {
+  sensitive = true
+}
