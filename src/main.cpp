@@ -31,6 +31,7 @@
 #include <BLE2902.h>
 #include <improv.h>
 */
+#include <MODULE_GRBL13.2.h>
 #include <esp_wifi.h>
 #include <WiFi.h>
 #include <Preferences.h>
@@ -185,6 +186,12 @@ Stepmotor drivers: 0x70, 0x71
 Relais: 0x26
 K-Meter: 0x66 (water temperature)
 */
+
+// this is directly part of the stack, we don't have to wait for the hub
+#define STEPMOTOR_I2C_ADDR 0x71
+// #define STEPMOTOR_I2C_ADDR 0x71
+
+GRBL _GRBL = GRBL(STEPMOTOR_I2C_ADDR);
 
 WiFiClient wificlient;
 
@@ -390,95 +397,6 @@ void setup() {
     WiFi.begin( PrefSSID.c_str() , PrefPassword.c_str() );
   }
 
-  /*
-  BLEDevice::init("Improv Service");
-
-  log("create ble server");
-
-  pServer = BLEDevice::createServer();
-  // pServer->setCallbacks(new myServerCallbacks());
-
-  log("create ble service");
-  pService = pServer->createService(improv::SERVICE_UUID); // , true
-  log("create status char");
-  BLECharacteristic *status = pService->createCharacteristic(improv::STATUS_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
-  BLEDescriptor *status_descriptor = new BLE2902();
-  log("add status desc");
-  status->addDescriptor(status_descriptor);
-  log("create error char");
-  BLECharacteristic *error = pService->createCharacteristic(improv::ERROR_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
-  BLEDescriptor *error_descriptor = new BLE2902();
-  log("add error desc");
-  error->addDescriptor(error_descriptor);
-
-  log("create rpc char");
-  BLECharacteristic *rpc = pService->createCharacteristic(improv::RPC_COMMAND_UUID, BLECharacteristic::PROPERTY_WRITE);
-  BLEDescriptor *rpc_descriptor = new BLE2902();
-  log("set rpc callbacks");
-  rpc_descriptor->setCallbacks(new RPCCallbacks());
-  log("add rpc desc");
-  rpc->addDescriptor(rpc_descriptor);
-
-  log("create rpc resp char");
-  BLECharacteristic *rpc_response = pService->createCharacteristic(improv::RPC_RESULT_UUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
-  BLEDescriptor *rpc_response_descriptor = new BLE2902();
-  log("add rpc resp desc");
-  rpc_response->addDescriptor(rpc_response_descriptor);
-
-  log("create cap char");
-  BLECharacteristic *capabilities = pService->createCharacteristic(improv::CAPABILITIES_UUID, BLECharacteristic::PROPERTY_READ);
-  BLEDescriptor *capabilities_descriptor = new BLE2902();
-  log("add cap desc");
-  capabilities->addDescriptor(capabilities_descriptor);
-
-  log("start ble service");
-  pService->start();
-
-
-  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(improv::SERVICE_UUID);
-  pAdvertising->setScanResponse(true);
-  pAdvertising->setMinPreferred(0x06);  // functions that help with iPhone connections issue
-  pAdvertising->setMinPreferred(0x12);
-  // pServer->getAdvertising()->addServiceUUID(improv::SERVICE_UUID);
-  log("start ble advertising");
-  BLEDevice::startAdvertising();
-  // pServer->getAdvertising()->start();
-  log("ble setup done.");
-  */
-
-  /*
-  EEPROM.begin(100);
-  Router_SSID = EEPROM.readString(0);
-  Router_Pass = EEPROM.readString(50);
-
-  // Router_SSID = ESP_wifiManager.WiFi_SSID();
-  // Router_Pass = ESP_wifiManager.WiFi_Pass();
-
-  Serial.println("ESP Self-Stored: SSID = " + Router_SSID + ", Pass = " + Router_Pass);
-
-  if ( (Router_SSID != "") && (Router_Pass != "") ) {
-    ESP_wifiManager.setConfigPortalTimeout(30);
-    wifiMulti.addAP(Router_SSID.c_str(), Router_Pass.c_str());
-  }
-
-  ESP_wifiManager.startConfigPortal("Growanywhere");
-
-  if ( (!ESP_wifiManager.WiFi_SSID().equals(Router_SSID)) || (!ESP_wifiManager.WiFi_Pass().equals(Router_Pass)) ) {
-    Router_SSID = ESP_wifiManager.WiFi_SSID().equals(Router_SSID);
-    Router_Pass = ESP_wifiManager.WiFi_Pass();
-
-    EEPROM.writeString(0, Router_SSID);
-    EEPROM.writeString(50, Router_Pass);
-
-    EEPROM.commit();
-  }
-
-  Serial.println("ESP Self-Stored: SSID = " + Router_SSID + ", Pass = " + Router_Pass);
-
-  wifiMulti.addAP(Router_SSID.c_str(), Router_Pass.c_str());
-  */
-
   // iotBaseInit(); // enable SIM7080 -> this is now part of the modemReset function
 
   M5.Lcd.fillScreen(BLACK);
@@ -547,6 +465,9 @@ void setup() {
   // f.e. if the current device address is 0x01 and the baud rate is 0x00 (9600) and the address should be changed to 0x02
   // the command is (the 0x0002 -> 1st byte is baud rate 0x00 and second byte is address 0x02)
   // modbus.writeSingleHoldingRegister(0x01, 0x0100, 0x0002);
+
+  _GRBL.Init(&Wire);
+  _GRBL.setMode("absolute");
 
 /*
   // Open the i2c hub
@@ -1146,9 +1067,13 @@ void button_pressed(uint8_t no) {
   }
   switch (no) {
     case 0:
+      _GRBL.setMotor(5,5,5,200);
+      _GRBL.setMotor(0,0,0,200);
       if (mode > 0) mode--;
       break;
     case 1:
+      _GRBL.sendGcode("G1 X5Y5Z5 F200");
+      _GRBL.sendGcode("G1 X0Y0Z0 F200");
       if (mode < 2) mode++;
     case 2:
     if (WiFi.status() != WL_CONNECTED) {
