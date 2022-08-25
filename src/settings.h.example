@@ -1,0 +1,76 @@
+// defines for the different features
+
+// i2c hub (default address is 0x70, which collides with the barometric pressure sensor of ENVIII and with the motor driver)
+#define USE_I2C_HUB
+#define I2C_ADDR_HUB 0x74
+
+// ambient light sensor (address is fixed 0x23)
+#define USE_I2C_DLIGHT
+
+// environment sensor ENVII (addresses are fixed: SHT30(0x44), BMP280(0x76), BMM150(0x10))
+#define USE_I2C_ENVII
+
+// alternatively, ENVIII (addresses are fixed: SHT30 (0x44), QMP6988(0x70)) (but the pressure sensor i2c address 0x70 clashes with the motor driver and/or the hub address)
+// #define USE_I2C_ENVIII
+
+// KMeter temperature sensor (address is fixed 0x66)
+#define USE_I2C_KMETER
+
+// Ultrasonic distance sensor
+#define USE_I2C_SONIC
+
+// the pH sensor uses an I2C ADC (address is fixed 0x48)
+#define USE_I2C_ADC
+
+// up too two GRBL modules (motor drivers) are supported, addresses are 0x70 and 0x71
+#define USE_I2C_GRBL
+#define I2C_ADDR_GRBL_LOWER 0x71
+#define I2C_ADDR_GRBL_UPPER 0x70
+
+// ESP32-cam as a I2C device sending images
+#define USE_I2C_CAM
+#define I2C_ADDR_CAM 0x17
+#define CAM_UPLOAD_URL "http://www.growanywhere.de/upload"
+
+// 4 relais (address is fixed 0x26)
+#define USE_I2C_4RELAY
+
+// include modbus (required for the modbus-sensors)
+#define USE_MODBUS
+
+// the NPK and the EC sensors both come with a factory setting of address 0x01, which conflicts.
+// after some trial and error, i could set the NPK sensor address to 0x02 via
+// modbus.writeSingleHoldingRegister(0x01, 0x0100, 0x0002);
+// this seems to persist!
+#define MODBUS_ADDR_NPK 0x02
+#define MODBUS_ADDR_EC 0x01
+
+// include the IoT base
+#define USE_IOT_BASE
+#define GPRS_APN "hologram"
+#define GPRS_USER ""
+
+// include the LoRaWan module (UART via SoftwareSerial)
+#define USE_LORAWAN
+#define LORAWAN_RX 16
+#define LORAWAN_TX 17
+
+// include the GPS unit (UART via SoftwareSerial)
+#define USE_GPS
+#define GPS_RX 36
+#define GPS_TX 26
+#define GPS_BAUD 9600
+
+// for sending data to telegraf... we send the data via TCP using the influx line protocol
+// (TCP is used here because TinyGSM does not support UDP)
+#define TELEGRAF_TCP_ADDR "157.245.23.172"
+#define TELEGRAF_TCP_PORT 8094
+
+// display related settings
+#define QR_URL "https://growanywhere.de"
+#define SCREENSAVE_MS 120000
+#define DEMO_MODE_MS 60000
+#define DEFAULT_BRIGHTNESS 128
+
+// box height in mm (for computing the water level based on the distance)
+#define BOX_HEIGHT 240
