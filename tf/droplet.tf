@@ -467,6 +467,7 @@ runcmd:
   - sed -i '/auth-enabled = false/a \ \ auth-enabled = true' /etc/influxdb/influxdb.conf
   - sed -i '/cache-max-memory-size/a \ \ cache-max-memory-size = "20m"' /etc/influxdb/influxdb.conf
   - sed -i '/^;http_addr =$/a http_addr = 127.0.0.1' /etc/grafana/grafana.ini
+  - sed -i '/^;allow_embedding =/a allow_embedding = true' /etc/grafana/grafana.ini
   - sed -i '/^;domain = localhost$/a domain = monitor.${var.domain}' /etc/grafana/grafana.ini
   - sed -i '/^;enforce_domain = false$/a enforce_domain = true' /etc/grafana/grafana.ini
   - sed -i '/^;root_url = /a root_url = https://monitor.${var.domain}/' /etc/grafana/grafana.ini
