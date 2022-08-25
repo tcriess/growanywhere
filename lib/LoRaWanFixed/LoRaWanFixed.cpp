@@ -30,7 +30,7 @@
 
 #include "LoRaWanFixed.h"
 
-SoftwareSerial loraSerial(16, 17);
+extern SoftwareSerial loraSerial;
 
 static void smartDelay(unsigned long ms) {
    unsigned long start = millis();

@@ -1,162 +1,94 @@
-// #include <Arduino.h>
+/*
+Growanywhere main unit
+======================
+
+Hardware:
+M5-Stack Core (ESP32 (BT, WiFi, ...), SD card, TFT display, 3 buttons)
+IoT-Base (RS485, ext. power, CatM)
+LoRaWan module
+2x GRBL motor driver modules
+
+I2C units:
+PaHUB (I2C hub)
+ENVII (temperature, humidity, barometric pressure)
+DLight (ambient light)
+Sonic (ultrasonic distance)
+ADC (analog-digital-converter for the pH-sensor)
+4RELAY (relays for switching the pumps on / off)
+*/
 #include <M5Stack.h>
-#include <M5_DLight.h>
+#include <algorithm>
+#include <SoftwareSerial.h>
+
+// EDIT THE FOLLOWING TWO HEADER FILES
+#include "settings.h"
+#include "secrets.h"
+
+#ifdef USE_I2C_HUB
 #include <TCA9548A.h>
-// #include <M5_ENV.h>
-// ENVII hat
+#endif
+
+#ifdef USE_I2C_DLIGHT
+#include <M5_DLight.h>
+#endif
+
+#ifdef USE_I2C_ENVIII
+#include <M5_ENV.h>
+#endif
+
+#ifdef USE_I2C_ENVII
 #include <SHT3X.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BMP280.h>
 #include <bmm150.h>
 #include <bmm150_defs.h>
-// end ENVII hat
+#endif
+
+#ifdef USE_I2C_KMETER
 #include <M5_KMeter.h>
+#endif
+
+#ifdef USE_I2C_ADC
 #include <M5_ADS1100.h>
-#include <esp32ModbusRTU.h>
-#include <SoftwareSerial.h>
-#include <IoT_BASE_SIM7080.h>
+#endif
+
+#ifdef USE_I2C_GRBL
+#include <MODULE_GRBL13.2.h>
+#endif
+
+#ifdef USE_I2C_SONIC
 #include <Unit_Sonic.h>
-#include <LoRaWanFixed.h> // from: https://github.com/Bjoerns-TB/LoRaWAN-M5Stack
-#include <CayenneLPP.h>
-#include <algorithm>
+#endif
+
+#ifdef USE_MODBUS
+#include <esp32ModbusRTU.h>
+#endif
+
+#ifdef USE_IOT_BASE
+#include <IoT_BASE_SIM7080.h>
 #define TINY_GSM_DEBUG SerialMon
 #include <TinyGsmClient.h> // after IoT_BASE_SIM7080.h (the modem is defined there)
+#endif
+
+#ifdef USE_LORAWAN
+#include <LoRaWanFixed.h> // from: https://github.com/Bjoerns-TB/LoRaWAN-M5Stack (renamed, such that it can coexist with the original LoRaWan code)
+#include <CayenneLPP.h>
+#endif
+
+#ifdef USE_GPS
 #include <TinyGPSPlus.h>
+#endif
+
+// includes for wifi (smartconfig)
 #include <HTTPClient.h>
-// #include <ArduinoHttpClient.h>
-/*
-#include <BLEDevice.h>
-#include <BLEUtils.h>
-#include <BLEServer.h>
-#include <BLE2902.h>
-#include <improv.h>
-*/
-#include <MODULE_GRBL13.2.h>
 #include <esp_wifi.h>
 #include <WiFi.h>
 #include <Preferences.h>
-#include "secrets.h"
 
-/*
-#include <EEPROM.h>
-#ifdef ESP32
-  #include <esp_wifi.h>
-  #include <WiFi.h>
-  #include <WiFiClient.h>
-
-  // From v1.1.0
-  #include <WiFiMulti.h>
-  WiFiMulti wifiMulti;
-
-  // LittleFS has higher priority than SPIFFS
-  #if ( defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 2) )
-    #define USE_LITTLEFS    true
-    #define USE_SPIFFS      false
-  #elif defined(ARDUINO_ESP32C3_DEV)
-    // For core v1.0.6-, ESP32-C3 only supporting SPIFFS and EEPROM. To use v2.0.0+ for LittleFS
-    #define USE_LITTLEFS          false
-    #define USE_SPIFFS            true
-  #endif
-
-  #define USE_LITTLEFS    false
-  #define USE_SPIFFS      false
-
-  #if USE_LITTLEFS
-    // Use LittleFS
-    #include "FS.h"
-
-    // Check cores/esp32/esp_arduino_version.h and cores/esp32/core_version.h
-    //#if ( ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(2, 0, 0) )  //(ESP_ARDUINO_VERSION_MAJOR >= 2)
-    #if ( defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 2) )
-      #warning Using ESP32 Core 1.0.6 or 2.0.0+
-      // The library has been merged into esp32 core from release 1.0.6
-      #include <LittleFS.h>       // https://github.com/espressif/arduino-esp32/tree/master/libraries/LittleFS
-      
-      FS* filesystem =      &LittleFS;
-      #define FileFS        LittleFS
-      #define FS_Name       "LittleFS"
-    #else
-      #warning Using ESP32 Core 1.0.5-. You must install LITTLEFS library
-      // The library has been merged into esp32 core from release 1.0.6
-      #include <LITTLEFS.h>       // https://github.com/lorol/LITTLEFS
-      
-      FS* filesystem =      &LITTLEFS;
-      #define FileFS        LITTLEFS
-      #define FS_Name       "LittleFS"
-    #endif
-    
-  #elif USE_SPIFFS
-    #include <SPIFFS.h>
-    FS* filesystem =      &SPIFFS;
-    #define FileFS        SPIFFS
-    #define FS_Name       "SPIFFS"
-  #else
-    // Use FFat
-    #include <FFat.h>
-    FS* filesystem =      &FFat;
-    #define FileFS        FFat
-    #define FS_Name       "FFat"
-  #endif
-  //////
-
-  #define ESP_getChipId()   ((uint32_t)ESP.getEfuseMac())
-
-  #define LED_BUILTIN       2
-  #define LED_ON            HIGH
-  #define LED_OFF           LOW
+// THIS NEEDS TO COME LAST!
+#ifdef USE_I2C_4RELAY
+#include <UNIT_4RELAY.h> // the globally defined "addr" in the header clashes with the aduinojson lib used in cayennelpp... (or somewhere else)...
 #endif
-
-// SSID and PW for Config Portal
-String ssid = "ESP_" + String(ESP_getChipId(), HEX);
-const char* password = "your_password";
-
-// SSID and PW for your Router
-String Router_SSID;
-String Router_Pass;
-
-// From v1.1.0
-// You only need to format the filesystem once
-//#define FORMAT_FILESYSTEM       true
-#define FORMAT_FILESYSTEM         false
-
-#define MIN_AP_PASSWORD_SIZE    8
-
-#define SSID_MAX_LEN            32
-//From v1.0.10, WPA2 passwords can be up to 63 characters long.
-#define PASS_MAX_LEN            64
-
-typedef struct
-{
-  char wifi_ssid[SSID_MAX_LEN];
-  char wifi_pw  [PASS_MAX_LEN];
-}  WiFi_Credentials;
-
-typedef struct
-{
-  String wifi_ssid;
-  String wifi_pw;
-}  WiFi_Credentials_String;
-
-#define NUM_WIFI_CREDENTIALS      2
-
-typedef struct
-{
-  WiFi_Credentials  WiFi_Creds [NUM_WIFI_CREDENTIALS];
-} WM_Config;
-
-WM_Config         WM_config;
-
-#define  CONFIG_FILENAME              F("/wifi_cred.dat")
-//////
-
-#include <ESP_WiFiManager.h>              //https://github.com/khoih-prog/ESP_WiFiManager
-*/
-
-#include <UNIT_4RELAY.h> // the globally defined "addr" clashes with the aduinojson lib used in cayennelpp... (or something else)... hence it must be included last!
-
-// ESP_WiFiManager ESP_wifiManager("Growanywhere");
-
-// WiFiClient wificlient;
 
 /*
 The following pins are in use
@@ -187,86 +119,77 @@ Relais: 0x26
 K-Meter: 0x66 (water temperature)
 */
 
-// this is directly part of the stack, we don't have to wait for the hub
-#define STEPMOTOR_I2C_ADDR 0x71
-// #define STEPMOTOR_I2C_ADDR 0x71
-
-GRBL _GRBL = GRBL(STEPMOTOR_I2C_ADDR);
-
+// WiFi / smartconfig
 WiFiClient wificlient;
+Preferences preferences;
 
-#define CAMADDR 0x17
+// flag: sd card is available
+bool hasCard = false;
 
-#define LORA_RX 16
-#define LORA_TX 17
+// these i2c modules are directly part of the stack, we don't have to wait for the hub
+#ifdef USE_I2C_GRBL
+#ifdef I2C_ADDR_GRBL_LOWER
+GRBL _GRBL_LOWER = GRBL(I2C_ADDR_GRBL_LOWER);
+#endif
+#ifdef I2C_ADDR_GRBL_UPPER
+GRBL _GRBL_UPPER = GRBL(I2C_ADDR_GRBL_UPPER);
+#endif
+#endif
 
-// SoftwareSerial loraSerial(LORA_RX, LORA_TX);
+#ifdef USE_LORAWAN
+SoftwareSerial loraSerial(LORAWAN_RX, LORAWAN_TX);
 
-#define GPS_RX 36
-#define GPS_TX 26
+char lorabuffer[256];
+char *devEui = DEVICE_EUI;
+char *appEui = APP_EUI;
+char *appKey = APP_KEY;
+#endif
 
-#define GPS_BAUD 9600
-
+#ifdef USE_GPS
 TinyGPSPlus gps;
+SoftwareSerial gpsSerial(GPS_RX, GPS_TX);
+#endif
 
+#ifdef USE_IOT_BASE
 TinyGsm modem(SerialAT);
-
 TinyGsmClient tcpclient(modem);
-// HttpClient http(tcpclient, "growanywhere.de", 8086);
-const char tcpaddr[] = "157.245.23.172";
-const uint16_t tcpport = 8094;
 
 const char apn[]      = GPRS_APN;
 const char gprsUser[] = GPRS_USER;
 const char gprsPass[] = GPRS_PASSWORD;
 
-uint8_t mode = 0;
+void nbConnect(void *);
+#endif
 
-time_t unixtime = 0;
-
-bool temp_valid = false;
-float temp = -270;
-uint16_t light = 0;
-float humid = -1;
-float press = 0.0;
-float ph = 0.0;
-float water_temp = -270;
-float lon = 0.0, lat = 0.0, alt = 0.0, hdop = 0.0;
-
-uint16_t nitrogen=0, phosphorus=0, potassium=0;
-
-float ec = 0.0;
-float distance = 0.0;
-
+#ifdef USE_I2C_DLIGHT
 M5_DLight *dlight;
+#endif
+
+#ifdef USE_I2C_ENVII
 SHT3X *sht30;
-// QMP6988 *qmp6988; // this will not work if using an unmodified hub, because it has the same address (0x70) as the tca9548 hub :(
 Adafruit_BMP280 *bme;
+#endif
+
+// ENVIII would need
+// QMP6988 *qmp6988; // this will not work if using an unmodified hub, because it has the same address (0x70) as the tca9548 hub and the motor driver :(
+
+#ifdef USE_I2C_ADC
 ADS1100 *ads;
+#endif
+
+#ifdef USE_I2C_KMETER
 M5_KMeter *kmeter;
-// ADS1100 *ads2;
+#endif
+
+#ifdef USE_I2C_4RELAY
 UNIT_4RELAY *unit_4relay;
+#endif
+
+#ifdef USE_I2C_SONIC
 SONIC_I2C *sonic;
+#endif
 
-struct DataRecord {
-
-  float temperature; // degree celcius
-  uint16_t light;
-  float humidity;
-  float pressure;
-  float pH;
-  float longitude, latitude, altitude, hdop;
-  uint16_t nitrogen, phosphorus, potassium;
-  float ec;
-};
-
-// the NPK and the EC sensors both come with a factory setting of address 0x01, which conflicts.
-// after some trial and error, i could set the NPK sensor address to 0x02 via
-// modbus.writeSingleHoldingRegister(0x01, 0x0100, 0x0002);
-// this seems to persist!
-#define MODBUS_ADDR_NPK 0x02
-#define MODBUS_ADDR_EC 0x01
-
+#ifdef USE_I2C_ADC
 #define ADC_VCC 12.0
 #define ADC_GAIN GAIN_ONE
 #define ADC_FACTOR 1.0
@@ -290,66 +213,61 @@ struct DataRecord {
 #define PH_FIT_B (-10.0571)
 #define PH_FIT_C 27.3821
 
-TCA9548A hub(0x74);
-
-esp32ModbusRTU modbus(&Serial2);
-
-SoftwareSerial gpsSerial(GPS_RX, GPS_TX);
-
-void nbConnect(void *);
-void m5update(void *);
-
-char lorabuffer[256];
-
+// compute the pH value based on the voltage
 double compute_ph(double voltage) {
   return voltage > 0 ? PH_FIT_A * voltage * voltage + PH_FIT_B * voltage + PH_FIT_C : 0;
 }
+#endif
+
+#ifdef USE_I2C_HUB
+TCA9548A hub(I2C_ADDR_HUB);
+#endif
+
+#ifdef USE_MODBUS
+esp32ModbusRTU modbus(&Serial2);
+#endif
+
+#ifdef USE_I2C_CAM
+uint8_t img[10240];
+#define BLOCKSIZE 128
+HTTPClient http;
+#endif
+
+time_t unixtime = 0;
+
+bool temp_valid = false;
+float temp = -270;
+uint16_t light = 0;
+float humid = -1;
+float press = 0.0;
+float ph = 0.0;
+float water_temp = -270;
+float lon = 0.0, lat = 0.0, alt = 0.0, hdop = 0.0;
+
+uint16_t nitrogen=0, phosphorus=0, potassium=0;
+
+float ec = 0.0;
+float distance = 0.0;
+
+struct DataRecord {
+
+  float temperature; // degree celcius
+  uint16_t light;
+  float humidity;
+  float pressure;
+  float pH;
+  float longitude, latitude, altitude, hdop;
+  uint16_t nitrogen, phosphorus, potassium;
+  float ec;
+};
+
+void m5update(void *);
 
 void log(String info) {
-    //canvas.println(info);
-    //canvas.pushSprite(0, 0);
-    SerialMon.println(info);
+    Serial.println(info);
 }
 
-char *devEui = DEVICE_EUI;
-char *appEui = APP_EUI;
-char *appKey = APP_KEY;
-
-bool hasCard = false;
-
-uint8_t img[10240];
-
-/*
-BLEServer *pServer;
-BLEService *pService;
-
-class RPCCallbacks : public BLEDescriptorCallbacks {
-public:
-	void onWrite(BLEDescriptor* pDescriptor) {
-    uint8_t* rxValue = pDescriptor->getValue();
-    if (pDescriptor->getLength() > 0) {
-        Serial.println("*********");
-        Serial.print("Received Descriptor Value: ");
-        for (int i = 0; i < pDescriptor->getLength(); i++)
-          Serial.print(rxValue[i]);
-
-        Serial.println();
-        Serial.println("*********");
-    }
-  };
-};
-*/
-
-Preferences preferences;
-
-void setup() {
-  Serial.write("Start.");
-  disableCore0WDT(); // disable the watchdog on core 0, this only causes issues (it is disabled on core 1 by default)
-
-  Wire.setPins(SDA, SCL);
-  M5.begin(true, true, true, false);
-  M5.Power.begin();
-
+void init_sd() {
   if (!SD.begin()) {  // Initialize the SD card.
       M5.Lcd.println(
           "Card failed, or not present");  // Print a message if the SD card
@@ -359,7 +277,9 @@ void setup() {
   } else {
     hasCard = true;
   }
+}
 
+void init_wifi() {
   WiFi.mode(WIFI_AP_STA);
   wifi_config_t conf;
   esp_wifi_get_config(WIFI_IF_STA, &conf);
@@ -370,9 +290,14 @@ void setup() {
   String PrefPassword = preferences.getString("password", "none");  //NVS key password
   preferences.end();
   if ((!rssiSSID.equals(PrefSSID)) || (!password.equals(PrefPassword))) {
+    M5.Lcd.setTextSize(5);
+    M5.Lcd.drawString("ESP smart config ...", 0, 0);
+    M5.Lcd.drawString("Use the app", 0, 40);
+    M5.Lcd.drawString("to set up WiFi", 0, 80);
+
     WiFi.beginSmartConfig();
     int waitfor = 0;
-    while ((!WiFi.smartConfigDone()) && (waitfor < 100)) {
+    while ((!WiFi.smartConfigDone()) && (waitfor < 240)) {
       delay(500);
       Serial.print(".");
       waitfor++;
@@ -396,11 +321,12 @@ void setup() {
   if (rssiSSID.equals(PrefSSID) && password.equals(PrefPassword)) {
     WiFi.begin( PrefSSID.c_str() , PrefPassword.c_str() );
   }
+}
 
-  // iotBaseInit(); // enable SIM7080 -> this is now part of the modemReset function
-
+void init_lcd() {
+  M5.Lcd.setBrightness(DEFAULT_BRIGHTNESS);
   M5.Lcd.fillScreen(BLACK);
-
+  delay(500);
   M5.Lcd.fillScreen(WHITE);
   delay(500);
   M5.Lcd.fillScreen(RED);
@@ -411,9 +337,10 @@ void setup() {
   delay(500);
   M5.Lcd.fillScreen(BLACK);
   delay(500);
+}
 
-  Serial.write("After fillScreen");
-
+#ifdef USE_MODBUS
+void init_modbus() {
   // RS485 modbus
   Serial2.begin(9600, SERIAL_8N1, IoT_BASE_RS485_RX, IoT_BASE_RS485_TX, false);
   modbus.onData([](uint8_t serverAddress, esp32Modbus::FunctionCode fc,  uint16_t address, uint8_t* data, size_t length) {
@@ -465,37 +392,57 @@ void setup() {
   // f.e. if the current device address is 0x01 and the baud rate is 0x00 (9600) and the address should be changed to 0x02
   // the command is (the 0x0002 -> 1st byte is baud rate 0x00 and second byte is address 0x02)
   // modbus.writeSingleHoldingRegister(0x01, 0x0100, 0x0002);
+}
+#endif
 
-  _GRBL.Init(&Wire);
-  _GRBL.setMode("absolute");
+void init_i2c() {
+#ifdef USE_I2C_GRBL
+  // the motor drivers are directly connected to the i2c bus, thus we do not need to wait for the hub
+#ifdef I2C_ADDR_GRBL_LOWER
+  _GRBL_LOWER.Init(&Wire);
+  _GRBL_LOWER.setMode("absolute");
+#endif
+#ifdef I2C_ADDR_GRBL_UPPER
+  _GRBL_UPPER.Init(&Wire);
+  _GRBL_UPPER.setMode("absolute");
+#endif
+#endif
 
-/*
+#ifdef USE_I2C_HUB
   // Open the i2c hub
   hub.begin();
   hub.openAll(); // the sensors (currently) have no conflicting addresses, so we can have all channels activated
   // hub.closeChannel(4); // ADC - water
   // hub.closeChannel(5); // ADC - pH sensor
   // it is important to initialize the sensors *after* the hub channels are open, otherwise the devices are not found!
+#endif
+
+#ifdef USE_I2C_DLIGHT
   dlight = new M5_DLight();
   dlight->begin();
   dlight->setMode(CONTINUOUSLY_H_RESOLUTION_MODE);
+#endif
 
+  // this would be for the ENVIII
   //qmp6988 = new QMP6988();
   //qmp6988->init();
 
+#ifdef USE_I2C_KMETER
   kmeter = new M5_KMeter();
   kmeter->begin();
+#endif
 
+#ifdef USE_I2C_ENVII
   sht30 = new SHT3X();
-
   bme = new Adafruit_BMP280();
   if (!bme->begin(0x76)){  
       Serial.println("Could not find a valid BMP280 sensor, check wiring!");
       // while (1);
   }
   Serial.print("\n\rCalibrate done..");
+#endif
 
-  /// hub.openChannel(5); // pH
+#ifdef USE_I2C_ADC
   ads = new ADS1100();
   ads->getAddr_ADS1100(ADS1100_DEFAULT_ADDRESS);  // 0x48, 1001 000 (ADDR = GND)
   // ads->setGain(GAIN_ONE);  // 1x gain(default)
@@ -515,17 +462,25 @@ void setup() {
 
   ads->setOSMode(OSMODE_SINGLE);  // Set to start a single-conversion.
   ads->begin();
+#endif
 
+#ifdef USE_I2C_4RELAY
   unit_4relay = new UNIT_4RELAY();
   unit_4relay->Init(1); // mode 0: async, 1: sync
 
   // unit_4relay->relayWrite(0, true);
+#endif
 
+#ifdef USE_I2C_SONIC
   sonic = new SONIC_I2C();
   sonic->begin();
-*/
-  gpsSerial.begin(GPS_BAUD, SWSERIAL_8N1, GPS_RX, GPS_TX);
-  
+#endif
+}
+
+#ifdef USE_LORAWAN
+CayenneLPP lpp(160);
+
+void init_lorawan() {
   lora_fixed.init();
   delay(2000);  // must delay for lorawan power on
 
@@ -564,7 +519,38 @@ void setup() {
   //lora.setDutyCycle(false);
   //lora.setJoinDutyCycle(false);
   lora_fixed.setOTAAJoin(JOIN, 10);
+}
+#endif
+
+void setup() {
+  Serial.write("Start.");
+  disableCore0WDT(); // disable the watchdog on core 0, this only causes issues (it is disabled on core 1 by default)
+
+  Wire.setPins(SDA, SCL);
+  M5.begin(true, true, true, false); // do not start I2C here
+  M5.Power.begin();
+
+  init_sd();
+
+  init_wifi();
+
+  init_lcd();
+
+#ifdef USE_MODBUS
+  init_modbus();
+#endif
   
+  init_i2c();
+
+#ifdef USE_GPS
+  gpsSerial.begin(GPS_BAUD, SWSERIAL_8N1, GPS_RX, GPS_TX);
+#endif
+  
+#ifdef USE_LORAWAN
+  init_lorawan();
+#endif
+  
+#ifdef USE_IOT_BASE
   SerialAT.begin(SIM7080_BAUDRATE, SERIAL_8N1, IoT_BASE_SIM7080_RX, IoT_BASE_SIM7080_TX);
   xTaskCreatePinnedToCore(
     nbConnect,    // Function that should be called
@@ -575,7 +561,7 @@ void setup() {
     NULL,             // Task handle
     0 // core id
   );
-  //nbConnect(); // connect to CatM - disabled for now, need to find out if the SIM card actually works.
+#endif
 
   xTaskCreatePinnedToCore(
     m5update,    // Function that should be called
@@ -591,28 +577,25 @@ void setup() {
     if (SD.exists("/data.csv")) {  // Check if the file exists
         log("data.csv exists.");
     } else {
-        log("hello.txt doesn't exist.");
+        log("data.csv doesn't exist.");
         File myFile = SD.open("/data.csv",
                           FILE_WRITE);  // Create a new file "/hello.txt".
         if (myFile) {
-          myFile.println("unixtime,temperature,humidity,pressure,light,ph,ec,nitrogen,phosphorus,potassium");
+          myFile.println("unixtime,temperature,humidity,pressure,light,ph,ec,nitrogen,phosphorus,potassium,distance,wtemperature");
           myFile.close();
         }
     }
   }
 }
 
-#define BLOCKSIZE 128
-
-HTTPClient http;
-
+#ifdef USE_I2C_CAM
 void save_image(bool upload=false) {
   uint8_t lenbuf[2];
   lenbuf[0] = 0;
   lenbuf[1] = 0;
   Serial.println("about to read camera image...");
   Wire.flush();
-  Wire.requestFrom(CAMADDR, 2, 1); // request size
+  Wire.requestFrom(I2C_ADDR_CAM, 2, 1); // request size
   // sleep(1);
   bool errored = false;
   Serial.printf("available: %d\n", Wire.available());
@@ -641,9 +624,9 @@ void save_image(bool upload=false) {
     //Serial.printf("reading block %d", blockno);
     remaining = length - rbytes;
     if (remaining > BLOCKSIZE) {
-      Wire.requestFrom(CAMADDR, BLOCKSIZE, 0);
+      Wire.requestFrom(I2C_ADDR_CAM, BLOCKSIZE, 0);
     } else {
-      Wire.requestFrom(CAMADDR, remaining, 1);
+      Wire.requestFrom(I2C_ADDR_CAM, remaining, 1);
     }
     for (int i=0; i<BLOCKSIZE && rbytes<length; i++,rbytes++) {
       if (!Wire.available()) {
@@ -673,7 +656,7 @@ void save_image(bool upload=false) {
       http.setTimeout(10000);
       bool success = false;
       for(int i=0;i<10&&(!success);i++) {
-        if (http.begin(wificlient, "http://www.growanywhere.de/upload")) {
+        if (http.begin(wificlient, CAM_UPLOAD_URL)) {
           log("about to post image");
           http.addHeader("Authorization", String("Basic ") + String(UPLOAD_BASIC));
           int code = http.POST(img, length);
@@ -686,11 +669,7 @@ void save_image(bool upload=false) {
     }
   }
 }
-
-CayenneLPP lpp(160);
-uint8_t buffer[2];
-unsigned long lastSent = 0;
-byte coords[12];
+#endif
 
 String createBody() {
   String body = "";
@@ -714,9 +693,11 @@ String createBody() {
   return body;
 }
 
+unsigned long lastSent = 0;
+
 void sendobject() {
   if(WiFi.status() == WL_CONNECTED) {
-    if (!wificlient.connect(tcpaddr, tcpport, 10000)) {
+    if (!wificlient.connect(TELEGRAF_TCP_ADDR, TELEGRAF_TCP_PORT, 10000)) {
       log("could not connect");
     } else {
       log("send data to influx");
@@ -731,8 +712,8 @@ void sendobject() {
   lastSent = millis();
   bool result = false;
 
-  Serial.println("Sending");
-
+#ifdef USE_LORAWAN
+  Serial.println("Sending via LoRaWan...");
   lpp.reset();
   if(unixtime > 943920000L) {
     // this kills the ttn decoder
@@ -793,50 +774,24 @@ void sendobject() {
   log(hexstring);
   result = lora_fixed.transferPacket(lpp.getBuffer(), lpp.getSize(), 5);
 
-/*
-  int32_t lat = lat * 10000.0;
-  int32_t lon = lon * 10000.0;
-  int16_t altitude = alt * 100.0;
-  int8_t hdopGPS = hdop / 10.0;
-
-
-  coords[0] = 0x00; // channel
-  coords[1] = 0x88; // see https://developers.mydevices.com/cayenne/docs/lora/#lora-cayenne-low-power-payload
-  coords[2] = lat;
-  coords[3] = lat >> 8;
-  coords[4] = lat >> 16;
-
-  coords[5] = lon;
-  coords[6] = lon >> 8;
-  coords[7] = lon >> 16;
-
-  coords[8] = altitude;
-  coords[9] = altitude >> 8;
-
-  coords[10] = hdopGPS;
-
-  // result = lora_fixed.transferPacket("Hello World!", 5);
-  result = lora_fixed.transferPacket(coords, sizeof(coords), 5);
-*/
   if (result == true) {
     Serial.println("Sent");
   } else {
     Serial.println("Error");
   }
+#endif
 }
 
 void fetchData(){
-  // toggle = !toggle;
-  // unit_4relay->relayWrite(0, toggle);
+#ifdef USE_I2C_DLIGHT
   vTaskDelay(100 / portTICK_PERIOD_MS);
   light = dlight->getLUX();
-  vTaskDelay(100 / portTICK_PERIOD_MS);
-  // press = qmp6988->calcPressure() / 100.0; // hPa
-  press = bme->readPressure()*0.01;
-  vTaskDelay(100 / portTICK_PERIOD_MS);
+#endif
 
-  water_temp = kmeter->getTemperature();
-  log("water temp="+String(water_temp, 1));
+#ifdef USE_I2C_ENVII
+  vTaskDelay(100 / portTICK_PERIOD_MS);
+  // press = qmp6988->calcPressure() / 100.0; // hPa this would be for ENVIII
+  press = bme->readPressure()*0.01;
 
   if (sht30->get() == 0) {
     temp = sht30->cTemp;
@@ -847,25 +802,27 @@ void fetchData(){
     temp_valid = false;
     humid = -1;
   }
-  
-  // hub.openChannel(5); // ph
-  //ads->setOSMode(OSMODE_SINGLE);
+#endif
+
+#ifdef USE_I2C_KMETER
+  vTaskDelay(100 / portTICK_PERIOD_MS);
+  water_temp = kmeter->getTemperature();
+  log("water temp="+String(water_temp, 1));
+#endif
+
+#ifdef USE_I2C_ADC
   double ph_voltage = (double)ads->Measure_Differential() * ((double)ADC_VCC) / ((double)ADC_FACTOR) / (-(double)ADC_MIN);
   vTaskDelay(100 / portTICK_PERIOD_MS);
   log("ph_v = " + String(ph_voltage));
   ph = compute_ph(ph_voltage);
-  // hub.closeChannel(5); // ph
+#endif
 
-  /*
-  hub.openChannel(4); // water
-  double water_voltage = (double)ads2->Measure_Differential() * ((double)ADC_VCC) / ((double)ADC_FACTOR) / (-(double)ADC_MIN);
-  log("water_v = " + String(water_voltage));
-  hub.closeChannel(4);
-  */
-
+#ifdef USE_I2C_SONIC
   distance = sonic->getDistance(); // in mm
   log("distance = " + String(distance,1));
+#endif
 
+#ifdef USE_GPS
   lon = (float)gps.location.lng();
   lat = (float)gps.location.lat();
   alt = (float)gps.altitude.value();
@@ -886,20 +843,24 @@ void fetchData(){
   unixtime = mktime ( &timeinfo );
 
   log("unixtime:"+String(unixtime));
-
-  if (modem.isNetworkConnected()) {
-    log("gsm datetime=" + modem.getGSMDateTime(TinyGSMDateTimeFormat::DATE_FULL));
-  }
   if (gps.time.isValid()) {
     log("gps time=" + String(gps.time.value()));
   }
+#endif
 
+#ifdef USE_IOT_BASE
+  if (modem.isNetworkConnected()) {
+    log("gsm datetime=" + modem.getGSMDateTime(TinyGSMDateTimeFormat::DATE_FULL));
+  }
+#endif
+
+#ifdef USE_MODBUS
   Serial.print("sending Modbus request...\n");
   modbus.readHoldingRegisters(0x02, 0x1e, 3); // npk
   vTaskDelay(100 / portTICK_PERIOD_MS);
   modbus.readHoldingRegisters(0x01, 0x00, 2); // ec
   vTaskDelay(100 / portTICK_PERIOD_MS);
-  // sendobject();
+#endif
 
   if (hasCard) {
     File myFile = SD.open("/data.csv", FILE_APPEND);
@@ -918,76 +879,7 @@ void fetchData(){
   }
 }
 
-unsigned long last_refresh = 0;
-#define REFRESH_MS 5000
-
-void refreshDisplay(){
-  if (millis() - last_refresh < REFRESH_MS) {
-    return;
-  }
-  last_refresh = millis();
-  M5.Lcd.fillScreen(BLACK);
-
-  switch(mode){
-    case 0:
-
-      // first menu
-      M5.Lcd.setTextSize(3);
-
-      M5.Lcd.drawString("Temperature: ", 0, 0);
-      M5.Lcd.setCursor(210,0);
-      M5.Lcd.printf("%.1f", temp);
-
-      M5.Lcd.drawString("Light: ", 0, 25);
-      M5.Lcd.setCursor(210,25);
-      M5.Lcd.printf("%i", light);
-
-      M5.Lcd.drawString("Humidity: ", 0, 50);
-      M5.Lcd.setCursor(210,50);
-      M5.Lcd.printf("%.1f", humid);
-
-      M5.Lcd.drawString("Pressure: ", 0, 75);
-      M5.Lcd.setCursor(210,75);
-      M5.Lcd.printf("%.2f", press);
-
-      M5.Lcd.drawString("Phosphorous: ", 0, 100);
-      M5.Lcd.setCursor(210,100);
-      M5.Lcd.printf("%d", phosphorus);
-
-      M5.Lcd.drawString("Potassium: ", 0, 125);
-      M5.Lcd.setCursor(210,125);
-      M5.Lcd.printf("%d", potassium);
-
-      M5.Lcd.drawString("nitrogen:", 0, 150);
-      M5.Lcd.setCursor(210,150);
-      M5.Lcd.printf("%d", nitrogen);
-
-      M5.Lcd.drawString("pH:", 0, 175);
-      M5.Lcd.setCursor(210,175);
-      M5.Lcd.printf("%.1f", ph);
-
-      M5.Lcd.drawString("EC:", 0, 200);
-      M5.Lcd.setCursor(210,200);
-      M5.Lcd.printf("%.1f", ec);
-
-      //M5.Lcd.drawString("pos:", 0, 200);
-      //M5.Lcd.setCursor(210,200);
-      //M5.Lcd.printf("%.1f %.1f", lon, lat);
-
-      break;
-    case 1:
-      M5.Lcd.drawJpgFile(SD, "/img.jpg");
-
-      break;
-    case 2:
-      
-      //third menu
-      M5.Lcd.qrcode("https://growanywhere.de");
-
-      break;
-  }
-}
-
+#ifdef USE_IOT_BASE
 void modemReset() {
   iotBaseInit();
   unsigned long start = millis();
@@ -1027,79 +919,416 @@ void modemReset() {
 
 // connect to the network and keep connected. also, send data if available.
 void nbConnect(void * parameter) {
-    for(;;) {
-      if(!modem.isGprsConnected()) {
-        log("gprs not connected, reset modem");
-        modemReset();
-      }
-      vTaskDelay(5000 / portTICK_PERIOD_MS);
-      
-      //if(!modem.isGprsConnected()) {
-      //  vTaskDelay(50000 / portTICK_PERIOD_MS);
-      //  continue;
-      //}
-      if (tcpclient.connect(tcpaddr, tcpport)) {
+  for(;;) {
+    if(!modem.isGprsConnected()) {
+      log("gprs not connected, reset modem");
+      modemReset();
+    }
+    vTaskDelay(5000 / portTICK_PERIOD_MS);
+
+    bool success = false;
+    for(int i=0; i<10&&(!success); i++) {
+      if (tcpclient.connect(TELEGRAF_TCP_ADDR, TELEGRAF_TCP_PORT)) {
+        success = true;
         String body = createBody();
         tcpclient.print(body);
-        
-        //int status = http.responseStatusCode();
-        //SerialMon.print(F("Response status code: "));
-
-        //http.stop();
         tcpclient.stop();
       }
       sleep(1);
-      vTaskDelay(60 * 60000 / portTICK_PERIOD_MS);
     }
+    vTaskDelay(60 * 60000 / portTICK_PERIOD_MS); // 1 hour
+  }
+}
+#endif
+
+// display mode
+// 0: measurements
+// 1: cam image
+// 2: QR code
+// 3: pump control
+uint8_t mode = 0;
+
+// submode
+// measurements:
+// 0: water (NPK, EC)
+// 1: water (temp, pH, EC)
+// 2: env (temp, hum, light)
+// 3: env (press, water level)
+//
+// pump control:
+// 0: pH+
+// 1: pH-
+// 2: nutrition+
+// 3: nutrition-
+uint8_t submode = 0;
+
+unsigned long last_refresh = 0;
+#define REFRESH_MS 5000
+
+// LCD size 320x240
+
+void refreshDisplay() {
+  if (millis() - last_refresh < REFRESH_MS) {
+    return;
+  }
+  last_refresh = millis();
+  M5.Lcd.fillScreen(BLACK);
+
+  switch(mode) {
+    case 0:
+      switch(submode) {
+        case 0:
+          // water: NPK, EC
+          M5.Lcd.setTextSize(3);
+          M5.Lcd.setTextColor(TFT_WHITE);
+          M5.Lcd.drawString("EC", 0, 0);
+          M5.Lcd.drawString("mS/cm", 0, 25);
+          M5.Lcd.setTextSize(6);
+          M5.Lcd.setTextColor(TFT_GREEN);
+          M5.Lcd.drawString(String(ec / 1000.0f, 1), 10, 65);
+
+          M5.Lcd.setTextSize(3);
+          M5.Lcd.setTextColor(TFT_WHITE);
+          M5.Lcd.drawString("Nitrogren", 160, 0);
+          M5.Lcd.drawString("mg/l", 160, 25);
+          M5.Lcd.setTextSize(6);
+          M5.Lcd.setTextColor(TFT_GREEN);
+          M5.Lcd.drawString(String(nitrogen), 170, 65);
+
+          M5.Lcd.setTextSize(3);
+          M5.Lcd.setTextColor(TFT_WHITE);
+          M5.Lcd.drawString("Phosphor", 0, 120);
+          M5.Lcd.drawString("mg/l", 0, 145);
+          M5.Lcd.setTextSize(6);
+          M5.Lcd.setTextColor(TFT_GREEN);
+          M5.Lcd.drawString(String(phosphorus), 10, 120+65);
+
+          M5.Lcd.setTextSize(3);
+          M5.Lcd.setTextColor(TFT_WHITE);
+          M5.Lcd.drawString("Potassium", 160, 120);
+          M5.Lcd.drawString("mg/l", 160, 145);
+          M5.Lcd.setTextSize(6);
+          M5.Lcd.setTextColor(TFT_GREEN);
+          M5.Lcd.drawString(String(potassium), 160+10, 120+65);
+
+          // 320 / 3 ~107 arrow length ~40 -> 33 + 40 + 33
+          M5.Lcd.drawLine(33, 235, 33+40, 235, TFT_BLUE);
+          M5.Lcd.drawLine(33, 235, 33+2, 231, TFT_BLUE);
+          M5.Lcd.drawLine(33, 235, 33+2, 239, TFT_BLUE);
+
+          M5.Lcd.drawLine(107+33, 235, 107+33+40, 235, TFT_BLUE);
+          M5.Lcd.drawLine(107+33+40, 235, 107+33+40-2, 231, TFT_BLUE);
+          M5.Lcd.drawLine(107+33+40, 235, 107+33+40-2, 239, TFT_BLUE);
+
+          M5.Lcd.fillCircle(107*2 + 107/2, 235, 4, TFT_RED);
+
+          break;
+
+        case 1:
+          // water: EC, temperature, pH
+          M5.Lcd.setTextSize(3);
+          M5.Lcd.setTextColor(TFT_WHITE);
+          M5.Lcd.drawString("pH", 0, 0);
+          M5.Lcd.setTextSize(6);
+          M5.Lcd.setTextColor(TFT_GREEN);
+          M5.Lcd.drawString(String(ph, 1), 10, 65);
+
+          M5.Lcd.setTextSize(3);
+          M5.Lcd.setTextColor(TFT_WHITE);
+          M5.Lcd.drawString("Temp.", 160, 0);
+          M5.Lcd.drawString("degC", 160, 25);
+          M5.Lcd.setTextSize(6);
+          M5.Lcd.setTextColor(TFT_GREEN);
+          M5.Lcd.drawString(String(water_temp, 1), 170, 65);
+
+          M5.Lcd.setTextSize(3);
+          M5.Lcd.setTextColor(TFT_WHITE);
+          M5.Lcd.drawString("EC", 0, 120);
+          M5.Lcd.drawString("uS/cm", 0, 145);
+          M5.Lcd.setTextSize(6);
+          M5.Lcd.setTextColor(TFT_GREEN);
+          M5.Lcd.drawString(String(ec), 10, 120+65);
+
+          // 320 / 3 ~107 arrow length ~40 -> 33 + 40 + 33
+          M5.Lcd.drawLine(33, 235, 33+40, 235, TFT_BLUE);
+          M5.Lcd.drawLine(33, 235, 33+2, 231, TFT_BLUE);
+          M5.Lcd.drawLine(33, 235, 33+2, 239, TFT_BLUE);
+
+          M5.Lcd.drawLine(107+33, 235, 107+33+40, 235, TFT_BLUE);
+          M5.Lcd.drawLine(107+33+40, 235, 107+33+40-2, 231, TFT_BLUE);
+          M5.Lcd.drawLine(107+33+40, 235, 107+33+40-2, 239, TFT_BLUE);
+
+          M5.Lcd.fillCircle(107*2 + 107/2, 235, 4, TFT_RED);
+
+          break;
+
+        case 2:
+          // env: temperature, rel.hum., light
+          M5.Lcd.setTextSize(3);
+          M5.Lcd.setTextColor(TFT_WHITE);
+          M5.Lcd.drawString("Temperature", 0, 0);
+          M5.Lcd.drawString("degC", 0, 25);
+          M5.Lcd.setTextSize(6);
+          M5.Lcd.setTextColor(TFT_GREEN);
+          M5.Lcd.drawString(String(temp, 1), 10, 65);
+
+          M5.Lcd.setTextSize(3);
+          M5.Lcd.setTextColor(TFT_WHITE);
+          M5.Lcd.drawString("Rel.hum.", 160, 0);
+          M5.Lcd.drawString("%", 160, 25);
+          M5.Lcd.setTextSize(6);
+          M5.Lcd.setTextColor(TFT_GREEN);
+          M5.Lcd.drawString(String(humid), 170, 65);
+
+          M5.Lcd.setTextSize(3);
+          M5.Lcd.setTextColor(TFT_WHITE);
+          M5.Lcd.drawString("amb.light", 0, 120);
+          M5.Lcd.drawString("lux", 0, 145);
+          M5.Lcd.setTextSize(6);
+          M5.Lcd.setTextColor(TFT_GREEN);
+          M5.Lcd.drawString(String(light), 10, 120+65);
+
+          // 320 / 3 ~107 arrow length ~40 -> 33 + 40 + 33
+          M5.Lcd.drawLine(33, 235, 33+40, 235, TFT_BLUE);
+          M5.Lcd.drawLine(33, 235, 33+2, 231, TFT_BLUE);
+          M5.Lcd.drawLine(33, 235, 33+2, 239, TFT_BLUE);
+
+          M5.Lcd.drawLine(107+33, 235, 107+33+40, 235, TFT_BLUE);
+          M5.Lcd.drawLine(107+33+40, 235, 107+33+40-2, 231, TFT_BLUE);
+          M5.Lcd.drawLine(107+33+40, 235, 107+33+40-2, 239, TFT_BLUE);
+
+          M5.Lcd.fillCircle(107*2 + 107/2, 235, 4, TFT_RED);
+
+          break;
+
+        case 3:
+          // env: pressure, water level
+          M5.Lcd.setTextSize(3);
+          M5.Lcd.setTextColor(TFT_WHITE);
+          M5.Lcd.drawString("Pressure", 0, 0);
+          M5.Lcd.drawString("mbar", 0, 25);
+          M5.Lcd.setTextSize(6);
+          M5.Lcd.setTextColor(TFT_GREEN);
+          M5.Lcd.drawString(String(press, 1), 10, 65);
+
+          M5.Lcd.setTextSize(3);
+          M5.Lcd.setTextColor(TFT_WHITE);
+          M5.Lcd.drawString("Water level", 0, 120);
+          M5.Lcd.drawString("mm", 0, 145);
+          M5.Lcd.setTextSize(6);
+          M5.Lcd.setTextColor(TFT_GREEN);
+          M5.Lcd.drawString(String(BOX_HEIGHT-distance), 10, 120+65);
+
+          // 320 / 3 ~107 arrow length ~40 -> 33 + 40 + 33
+          M5.Lcd.drawLine(33, 235, 33+40, 235, TFT_BLUE);
+          M5.Lcd.drawLine(33, 235, 33+2, 231, TFT_BLUE);
+          M5.Lcd.drawLine(33, 235, 33+2, 239, TFT_BLUE);
+
+          M5.Lcd.drawLine(107+33, 235, 107+33+40, 235, TFT_BLUE);
+          M5.Lcd.drawLine(107+33+40, 235, 107+33+40-2, 231, TFT_BLUE);
+          M5.Lcd.drawLine(107+33+40, 235, 107+33+40-2, 239, TFT_BLUE);
+
+          M5.Lcd.fillCircle(107*2 + 107/2, 235, 4, TFT_RED);
+
+          break;
+      }
+      break;
+
+    case 1:
+      M5.Lcd.drawJpgFile(SD, "/img.jpg");
+      M5.Lcd.fillCircle(107*2 + 107/2, 235, 4, TFT_RED);
+      break;
+
+    case 2:
+      M5.Lcd.qrcode(QR_URL);
+      M5.Lcd.fillCircle(107*2 + 107/2, 235, 4, TFT_RED);
+      break;
+
+    case 3:
+      switch(submode) {
+        case 0:
+          // npk+
+          M5.Lcd.setTextSize(7);
+          M5.Lcd.setTextColor(TFT_WHITE);
+          M5.Lcd.drawString("NPK+", 100, 120);
+
+          M5.Lcd.drawLine(33, 235, 33+40, 235, TFT_BLUE);
+          M5.Lcd.drawLine(33+40, 235, 33+40-2, 231, TFT_BLUE);
+          M5.Lcd.drawLine(33+40, 235, 33+40-2, 239, TFT_BLUE);
+
+          M5.Lcd.fillCircle(159, 214, 25, TFT_GREEN);
+
+          M5.Lcd.fillCircle(107*2 + 107/2, 235, 4, TFT_RED);
+          break;
+
+        case 1:
+          // ph+
+          M5.Lcd.setTextSize(7);
+          M5.Lcd.setTextColor(TFT_WHITE);
+          M5.Lcd.drawString("pH+", 100, 120);
+
+          M5.Lcd.drawLine(33, 235, 33+40, 235, TFT_BLUE);
+          M5.Lcd.drawLine(33+40, 235, 33+40-2, 231, TFT_BLUE);
+          M5.Lcd.drawLine(33+40, 235, 33+40-2, 239, TFT_BLUE);
+
+          M5.Lcd.fillCircle(159, 214, 25, TFT_GREEN);
+
+          M5.Lcd.fillCircle(107*2 + 107/2, 235, 4, TFT_RED);
+          break;
+
+        case 2:
+          // ph-
+          M5.Lcd.setTextSize(7);
+          M5.Lcd.setTextColor(TFT_WHITE);
+          M5.Lcd.drawString("pH-", 100, 120);
+
+          M5.Lcd.drawLine(33, 235, 33+40, 235, TFT_BLUE);
+          M5.Lcd.drawLine(33+40, 235, 33+40-2, 231, TFT_BLUE);
+          M5.Lcd.drawLine(33+40, 235, 33+40-2, 239, TFT_BLUE);
+
+          M5.Lcd.fillCircle(159, 214, 25, TFT_GREEN);
+
+          M5.Lcd.fillCircle(107*2 + 107/2, 235, 4, TFT_RED);
+          break;
+      }
+      break;
+  }
 }
 
-#define SCREENSAVE_MS 10000
 unsigned long last_activity = 0;
 bool blank = false;
+
+void wakeup_lcd() {
+  M5.Lcd.wakeup();
+  M5.Lcd.setBrightness(DEFAULT_BRIGHTNESS);
+  blank = false;
+}
 
 void button_pressed(uint8_t no) {
   last_activity = millis();
   if (blank) {
-    M5.Lcd.wakeup();
-    M5.Lcd.setBrightness(128);
-    blank = false;
+    wakeup_lcd();
     return;
   }
-  switch (no) {
+  switch(mode) {
     case 0:
-      _GRBL.setMotor(5,5,5,200);
-      _GRBL.setMotor(0,0,0,200);
-      if (mode > 0) mode--;
+      switch (no) {
+        case 0:
+          if (submode > 0) submode--;
+          else submode = 3;
+          break;
+        case 1:
+          if (submode < 3) submode++;
+          else submode = 0;
+          break;
+        case 2:
+          mode++;
+          submode = 0;
+          break;
+      }
       break;
+
     case 1:
-      _GRBL.sendGcode("G1 X5Y5Z5 F200");
-      _GRBL.sendGcode("G1 X0Y0Z0 F200");
-      if (mode < 2) mode++;
+      switch (no) {
+        case 2:
+          mode++;
+          break;
+        default:
+          if (WiFi.status() != WL_CONNECTED) {
+            WiFi.beginSmartConfig();
+            int waitfor = 0;
+            while ((!WiFi.smartConfigDone()) && (waitfor < 100)) {
+              delay(500);
+              Serial.print(".");
+              waitfor++;
+            }
+            if (WiFi.smartConfigDone()) {
+              Serial.println("smart config done, connect");
+              while( WiFi.status() != WL_CONNECTED )    	// check till connected
+              { 
+                delay(2000);
+                Serial.print(".");
+              }
+              preferences.begin("wifi", false);      // put it in storage
+              preferences.putString( "ssid", WiFi.SSID());
+              preferences.putString( "password", WiFi.psk());
+              preferences.end();
+              ESP.restart();
+            }
+            Serial.println("could not connect, abort");
+            WiFi.stopSmartConfig();
+          }
+          break;
+      }
+      break;
+
     case 2:
-    if (WiFi.status() != WL_CONNECTED) {
-      WiFi.beginSmartConfig();
-      int waitfor = 0;
-      while ((!WiFi.smartConfigDone()) && (waitfor < 100)) {
-        delay(500);
-        Serial.print(".");
-        waitfor++;
+      switch (no) {
+        case 2:
+          mode++;
+          break;
+        default:
+          if (WiFi.status() != WL_CONNECTED) {
+            WiFi.beginSmartConfig();
+            int waitfor = 0;
+            while ((!WiFi.smartConfigDone()) && (waitfor < 100)) {
+              delay(500);
+              Serial.print(".");
+              waitfor++;
+            }
+            if (WiFi.smartConfigDone()) {
+              Serial.println("smart config done, connect");
+              while( WiFi.status() != WL_CONNECTED )    	// check till connected
+              { 
+                delay(2000);
+                Serial.print(".");
+              }
+              preferences.begin("wifi", false);      // put it in storage
+              preferences.putString( "ssid", WiFi.SSID());
+              preferences.putString( "password", WiFi.psk());
+              preferences.end();
+              ESP.restart();
+            }
+            Serial.println("could not connect, abort");
+            WiFi.stopSmartConfig();
+          }
+          break;
       }
-      if (WiFi.smartConfigDone()) {
-        Serial.println("smart config done, connect");
-        while( WiFi.status() != WL_CONNECTED )    	// check till connected
-        { 
-          delay(2000);
-          Serial.print(".");
-        }
-        preferences.begin("wifi", false);      // put it in storage
-        preferences.putString( "ssid", WiFi.SSID());
-        preferences.putString( "password", WiFi.psk());
-        preferences.end();
-        ESP.restart();
+      break;
+
+    case 3:
+      switch (no) {
+        case 0:
+          if (submode < 2) submode++;
+          else submode = 0;
+          break;
+        case 1:
+          switch(submode) {
+            case 0:
+              // npk+
+              _GRBL_LOWER.setMotor(5,0,0,200);
+              _GRBL_LOWER.setMotor(0,0,0,200);
+              break;
+
+            case 1:
+              // ph+
+              _GRBL_LOWER.setMotor(0,5,0,200);
+              _GRBL_LOWER.setMotor(0,0,0,200);
+              break;
+
+            case 2:
+              // ph-
+              _GRBL_LOWER.setMotor(0,0,5,200);
+              _GRBL_LOWER.setMotor(0,0,0,200);
+              break;
+          }
+          break;
+        case 2:
+          mode = 0;
+          submode = 0;
+          break;
       }
-      Serial.println("could not connect, abort");
-      WiFi.stopSmartConfig();
-    }
+      break;
   }
 }
 
@@ -1117,15 +1346,21 @@ void m5update(void * parameter) {
       button_pressed(2);
     }
     unsigned long a = millis() - last_activity;
-    if (!blank) {
-      if (a > SCREENSAVE_MS) {
-        blank = true;
-        M5.Lcd.clearDisplay();
-        M5.Lcd.sleep();
-        M5.Lcd.setBrightness(0);
-      } else {
-        // M5.Lcd.setBrightness(255);
-        refreshDisplay();
+    if (a > DEMO_MODE_MS) {
+      if(blank) {
+        wakeup_lcd();
+      }
+      refreshDisplay();
+    } else {
+      if (!blank) {
+        if (a > SCREENSAVE_MS) {
+          blank = true;
+          M5.Lcd.clearDisplay();
+          M5.Lcd.sleep();
+          M5.Lcd.setBrightness(0);
+        } else {
+          refreshDisplay();
+        }
       }
     }
     vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -1137,16 +1372,18 @@ static void smartDelay(unsigned long ms)
   unsigned long start = millis();
   do 
   {
+#ifdef USE_GPS
     while (gpsSerial.available()) {
       byte b = gpsSerial.read();
       gps.encode(b);
     }
+#endif
     vTaskDelay(100 / portTICK_PERIOD_MS);
   } while (millis() - start < ms);
 }
 
 void loop() {
-  // fetchData();
+  fetchData();
   sendobject();
   smartDelay(10000);
 }
