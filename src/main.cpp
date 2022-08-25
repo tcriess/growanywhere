@@ -989,7 +989,7 @@ void refreshDisplay() {
 
           M5.Lcd.setTextSize(3);
           M5.Lcd.setTextColor(TFT_WHITE);
-          M5.Lcd.drawString("Nitrogren", 160, 0);
+          M5.Lcd.drawString("Nitrogen", 160, 0);
           M5.Lcd.drawString("mg/l", 160, 25);
           M5.Lcd.setTextSize(6);
           M5.Lcd.setTextColor(TFT_GREEN);
